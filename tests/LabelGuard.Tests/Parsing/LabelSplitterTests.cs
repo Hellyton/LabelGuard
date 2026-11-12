@@ -94,6 +94,33 @@ public class LabelSplitterTests
     }
 
     [Fact]
+    public void TsplBitmap_IgnoresCommandsInsideBinaryData()
+    {
+        // Dados do bitmap contendo "^XA" e "\nPRINT 9\n" por acaso.
+        var data = Encoding.Latin1.GetBytes("^XA\nPRINT 9\n").Concat(Enumerable.Repeat((byte)0xFF, 88)).ToArray();
+        var job = TsplJob.WithBitmap(10, 10, data, "PRINT 2,1");
+
+        var label = Assert.Single(LabelSplitter.Split(job));
+
+        Assert.Equal(PrinterLanguage.Tspl, LabelSplitter.Detect(label.Text));
+        Assert.Equal(2, label.Copies);
+        Assert.Equal(job, label.RawData);
+    }
+
+    [Fact]
+    public void TsplBitmap_SplitsTwoLabels()
+    {
+        var first = TsplJob.WithBitmap(2, 2, new byte[] { 0xFF, 0x00, 0x00, 0xFF });
+        var second = TsplJob.WithBitmap(2, 2, new byte[] { 0x00, 0xFF, 0xFF, 0x00 });
+
+        var labels = LabelSplitter.Split(first.Concat(second).ToArray());
+
+        Assert.Equal(2, labels.Count);
+        Assert.Equal(first, labels[0].RawData);
+        Assert.Equal(second, labels[1].RawData);
+    }
+
+    [Fact]
     public void Unknown_ReturnsWholeJobAsOneLabel()
     {
         var job = Bytes("dados sem comandos conhecidos");

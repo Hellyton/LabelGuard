@@ -36,7 +36,7 @@ public static class LabelSplitter
             return Array.Empty<Label>();
 
         // Latin-1 mapeia cada byte para um caractere, então índices do texto = índices dos bytes.
-        var text = Encoding.Latin1.GetString(job);
+        var text = MaskBitmaps(Encoding.Latin1.GetString(job));
 
         return Detect(text) switch
         {
@@ -69,6 +69,18 @@ public static class LabelSplitter
                 return new Label(job[r.Start..r.End], segment, copies(segment));
             })
             .ToList();
+    }
+
+    // Os dados binários de um BITMAP podem conter "^XA" ou "PRINT" por acaso; troca por '\0' sem mudar o tamanho.
+    private static string MaskBitmaps(string text)
+    {
+        char[]? chars = null;
+        foreach (var bitmap in TsplBitmap.FindAll(text))
+        {
+            chars ??= text.ToCharArray();
+            Array.Fill(chars, '\0', bitmap.DataStart, bitmap.DataLength);
+        }
+        return chars is null ? text : new string(chars);
     }
 
     private static int ZplCopies(string label)

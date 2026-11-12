@@ -2,11 +2,14 @@ using System.Text.RegularExpressions;
 
 namespace LabelGuard.Core.Parsing;
 
-/// <summary>Encontra o número identificador no texto de uma etiqueta usando uma expressão regular configurável.</summary>
+/// <summary>Encontra o número identificador de uma etiqueta usando uma expressão regular configurável.</summary>
 public sealed class IdExtractor
 {
-    /// <summary>Padrão inicial: 7 dígitos isolados (ex.: 1196924). Ajustar com uma amostra real do Papersystem.</summary>
-    public const string DefaultPattern = @"(?<!\d)(?<id>\d{7})(?!\d)";
+    /// <summary>
+    /// Padrão inicial: número do pallet no QR code do Papersystem,
+    /// ex.: https://app.papersystem.com.br/d/etiqueta?pallet=3931&amp;...
+    /// </summary>
+    public const string DefaultPattern = @"[?&]pallet=(?<id>\d+)";
 
     private const string IdGroup = "id";
 
@@ -23,10 +26,15 @@ public sealed class IdExtractor
 
     public string Pattern => _regex.ToString();
 
-    /// <summary>Retorna o primeiro ID encontrado, ou null se a etiqueta não tiver ID.</summary>
-    public string? Extract(string labelText)
+    /// <summary>Procura o ID primeiro nos códigos de barras/QR da etiqueta e depois nos comandos de texto.</summary>
+    public string? Extract(Label label) =>
+        BarcodeScanner.Read(label).Select(Extract).FirstOrDefault(id => id is not null)
+        ?? Extract(label.Text);
+
+    /// <summary>Retorna o primeiro ID encontrado, ou null se o texto não tiver ID.</summary>
+    public string? Extract(string text)
     {
-        var m = _regex.Match(labelText);
+        var m = _regex.Match(text);
         return m.Success ? m.Groups[IdGroup].Value : null;
     }
 }

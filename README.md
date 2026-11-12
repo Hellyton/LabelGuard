@@ -75,9 +75,22 @@ tests/LabelGuard.Tests  testes automatizados (xUnit)
 
 Os bytes originais de cada etiqueta são mantidos para reenvio sem alteração.
 
-`IdExtractor` acha o ID com uma expressão regular que tem o grupo nomeado `id`.
-Padrão inicial: `(?<!\d)(?<id>\d{7})(?!\d)` (7 dígitos isolados, ex.: 1196924).
-Esse padrão deve ser ajustado depois de capturar um trabalho real do Papersystem.
+### Impressora POS-9210 (driver Windows)
+
+O driver envia TSPL com a etiqueta inteira como imagem (`BITMAP`), sem texto legível.
+O identificador é lido do QR code impresso pelo Papersystem:
+
+```
+https://app.papersystem.com.br/d/etiqueta?pallet=3931&fornecedor=...&largura=1500&...
+```
+
+`BarcodeScanner` converte o bitmap e decodifica o QR (ZXing.Net). `IdExtractor` aplica
+uma expressão regular com o grupo nomeado `id`, primeiro no conteúdo dos códigos e depois
+nos comandos de texto. Padrão inicial: `[?&]pallet=(?<id>\d+)` (número do pallet).
+
+Para capturar um trabalho real: nas propriedades da impressora, aba Portas, adicionar
+uma Local Port com o caminho de um arquivo (ex.: `C:\temp\etiqueta.prn`), imprimir e
+depois voltar a porta original.
 
 ## Compilar e testar
 
