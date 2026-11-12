@@ -61,7 +61,17 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 ```
 src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
+tools/LabelGuard.Inspect  analisa trabalhos capturados em arquivo (.prn)
 ```
+
+## Analisar um trabalho capturado
+
+```bash
+dotnet run --project tools/LabelGuard.Inspect -- C:\temp\etiqueta.prn [mais arquivos] [--codes] [--pattern "<regex>"]
+```
+
+Mostra cada etiqueta do trabalho, o ID lido e se ele já apareceu antes (no mesmo
+arquivo ou em um arquivo anterior da lista). `--codes` mostra o conteúdo dos QR codes.
 
 ## Extração do identificador
 
