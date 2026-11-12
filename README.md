@@ -108,7 +108,7 @@ arquivo ou em um arquivo anterior da lista). `--codes` mostra o conteúdo dos QR
 Para simular o LabelGuard completo, com histórico gravado entre execuções:
 
 ```bash
-dotnet run --project tools/LabelGuard.Inspect -- C:	emp\etiqueta.prn --db C:	emp\historico.db [--saida C:	emp\liberadas.prn]
+dotnet run --project tools/LabelGuard.Inspect -- C:\temp\etiqueta.prn --db C:\temp\historico.db [--saida C:\temp\liberadas.prn]
 ```
 
 Na primeira vez as etiquetas saem como IMPRESSA; repetindo o comando, saem como
