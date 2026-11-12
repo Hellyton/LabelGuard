@@ -15,6 +15,7 @@ var dbPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "LabelGuard", "historico.db");
 var pattern = IdExtractor.DefaultPattern;
 var options = new GuardOptions();
+string? saveDir = null;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -31,6 +32,9 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "--pattern" when i + 1 < args.Length:
             pattern = args[++i];
+            break;
+        case "--salvar" when i + 1 < args.Length:
+            saveDir = args[++i];
             break;
         case "--imprimir-sem-id":
             options = options with { PrintWithoutId = true };
@@ -49,9 +53,10 @@ for (var i = 0; i < args.Length; i++)
 if (printer is null)
 {
     Console.WriteLine("Uso: LabelGuard.Server --impressora <fila real> [--porta 9100] [--db <arquivo>] [--pattern <regex>]");
-    Console.WriteLine("                       [--imprimir-sem-id] [--permitir-copias]");
-    Console.WriteLine("  --impressora  fila do Windows ligada à impressora de verdade (ex.: LABEL)");
+    Console.WriteLine("                       [--imprimir-sem-id] [--permitir-copias] [--salvar <pasta>]");
+    Console.WriteLine("  --impressora  fila do Windows ligada à impressora de verdade (ex.: \"LABEL (Saida USB)\")");
     Console.WriteLine("  --db          histórico, padrão: " + dbPath);
+    Console.WriteLine("  --salvar      grava cada trabalho recebido nessa pasta (.prn), para diagnóstico");
     return 1;
 }
 
@@ -66,6 +71,8 @@ catch (Exception ex)
 }
 
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dbPath))!);
+if (saveDir is not null)
+    Directory.CreateDirectory(saveDir);
 using var history = new LabelHistory(dbPath);
 var guard = new PrintGuard(history, new IdExtractor(pattern), options);
 var sender = new RawPrinterSender(printer);
@@ -91,6 +98,8 @@ Console.CancelKeyPress += (_, e) =>
 
 Log($"LabelGuard ouvindo em {receiver.LocalEndpoint}, enviando para '{printer}'");
 Log($"Histórico: {Path.GetFullPath(dbPath)}");
+if (saveDir is not null)
+    Log($"Trabalhos recebidos gravados em: {Path.GetFullPath(saveDir)}");
 Log("Ctrl+C para parar.");
 await receiver.RunAsync(cts.Token);
 Log("Parado.");
@@ -98,6 +107,8 @@ return 0;
 
 async Task HandleJobAsync(ReceivedJob job, CancellationToken cancellationToken)
 {
+    if (saveDir is not null)
+        await File.WriteAllBytesAsync(Path.Combine(saveDir, job.Name + ".prn"), job.Data, cancellationToken);
     var result = await guard.ProcessAsync(job.Data, job.Name, sender, cancellationToken);
     lock (consoleLock)
     {

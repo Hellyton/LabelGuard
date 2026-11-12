@@ -100,34 +100,42 @@ ser liberadas com `AuthorizeAsync`, que registra o supervisor.
 
 ## Testar com a impressora
 
-Fluxo (impressora USB):
+O Papersystem continua imprimindo na fila `LABEL`, com o mesmo driver e configuração
+(o driver desenha a etiqueta como imagem, e qualquer diferença de configuração muda o
+resultado). Só a porta dela passa a ser o LabelGuard. Uma segunda fila na USB recebe as
+etiquetas liberadas em modo RAW, que não passa pelo driver:
 
 ```
-Papersystem -> "LABEL (Protegida)" (porta 127.0.0.1:9100) -> LabelGuard.Server -> "LABEL" (USB001, RAW) -> impressora
+Papersystem -> "LABEL" (porta 127.0.0.1:9100) -> LabelGuard.Server -> "LABEL (Saida USB)" (USB001, RAW) -> impressora
 ```
 
-1. Fila `LABEL` de volta na porta USB e fila protegida com o mesmo driver e configuração
-   (PowerShell como administrador):
+1. Configurar as filas (PowerShell como administrador):
 
    ```powershell
-   Set-Printer -Name "LABEL" -PortName "USB001"
    Add-PrinterPort -Name "LabelGuard_9100" -PrinterHostAddress "127.0.0.1" -PortNumber 9100
-   Add-Printer -Name "LABEL (Protegida)" -DriverName "LABEL" -PortName "LabelGuard_9100"
-   Set-PrintConfiguration -PrinterName "LABEL (Protegida)" -PrintTicketXml (Get-PrintConfiguration -PrinterName "LABEL").PrintTicketXML
+   Add-Printer -Name "LABEL (Saida USB)" -DriverName "LABEL" -PortName "USB001"
+   Set-Printer -Name "LABEL" -PortName "LabelGuard_9100"
    ```
 
 2. Iniciar o LabelGuard:
 
    ```bash
-   dotnet run --project src/LabelGuard.Server -- --impressora LABEL
+   dotnet run --project src/LabelGuard.Server -- --impressora "LABEL (Saida USB)"
    ```
 
-3. No Papersystem, imprimir na fila `LABEL (Protegida)`. Cada etiqueta liberada vira um
-   documento separado na fila `LABEL`; as repetidas aparecem em vermelho no console.
+3. Imprimir pelo Papersystem normalmente. As repetidas aparecem em vermelho no console.
+   Com o LabelGuard fechado, os trabalhos ficam parados na fila `LABEL` e saem quando ele abrir.
 
+`--salvar <pasta>` grava cada trabalho recebido, para comparar com uma captura direta.
 O histórico fica em `C:\ProgramData\LabelGuard\historico.db`.
 
-Para desfazer: `Remove-Printer -Name "LABEL (Protegida)"` e `Remove-PrinterPort -Name "LabelGuard_9100"`.
+Para desfazer:
+
+```powershell
+Set-Printer -Name "LABEL" -PortName "USB001"
+Remove-Printer -Name "LABEL (Saida USB)"
+Remove-PrinterPort -Name "LabelGuard_9100"
+```
 
 ## Analisar um trabalho capturado
 
