@@ -53,6 +53,13 @@ LabelGuard.Server envia `SET REPRINT OFF` antes de cada etiqueta liberada (desli
 momento do erro pode se perder; ela já consta como impressa e precisa de reimpressão
 autorizada.
 
+Sem o LabelGuard, o comando pode ser enviado uma vez direto para a fila da impressora:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\desligar-reimpressao.ps1 -Impressora "LABEL"
+powershell -ExecutionPolicy Bypass -File tools\desligar-reimpressao.ps1 -Impressora "LABEL" -Ligar   # desfaz
+```
+
 ## Etapas de desenvolvimento
 
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git
