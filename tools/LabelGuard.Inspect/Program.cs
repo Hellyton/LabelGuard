@@ -36,6 +36,12 @@ var seen = new Dictionary<string, string>(); // ID -> onde apareceu primeiro
 
 foreach (var file in files)
 {
+    if (!File.Exists(file))
+    {
+        Console.WriteLine($"{file}: arquivo não encontrado");
+        continue;
+    }
+
     var job = File.ReadAllBytes(file);
     var sw = Stopwatch.StartNew();
     var labels = LabelSplitter.Split(job);
