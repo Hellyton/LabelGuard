@@ -52,7 +52,7 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 - [x] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL, TSPL) e achar o ID por expressão regular configurável
 - [x] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
 - [x] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
-- [ ] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio para impressora de rede
+- [x] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio RAW para a impressora USB pelo spooler
 - [ ] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, envio para impressora USB
 - [ ] **7. Instalação** – script PowerShell que cria a impressora protegida, guia de configuração
 
@@ -61,6 +61,8 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 ```
 src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
+src/LabelGuard.Windows  envio RAW para filas do Windows (winspool)
+src/LabelGuard.Server   executável de console: receptor + motor + envio
 tools/LabelGuard.Inspect  analisa trabalhos capturados em arquivo (.prn)
 ```
 
@@ -95,6 +97,37 @@ Reimpressões liberadas entram com o nome do supervisor.
 O ID é reservado no histórico antes do envio e liberado se o envio falhar: uma
 etiqueta que não saiu não fica marcada como impressa. Etiquetas bloqueadas podem
 ser liberadas com `AuthorizeAsync`, que registra o supervisor.
+
+## Testar com a impressora
+
+Fluxo (impressora USB):
+
+```
+Papersystem -> "LABEL (Protegida)" (porta 127.0.0.1:9100) -> LabelGuard.Server -> "LABEL" (USB001, RAW) -> impressora
+```
+
+1. Fila `LABEL` de volta na porta USB e fila protegida com o mesmo driver e configuração
+   (PowerShell como administrador):
+
+   ```powershell
+   Set-Printer -Name "LABEL" -PortName "USB001"
+   Add-PrinterPort -Name "LabelGuard_9100" -PrinterHostAddress "127.0.0.1" -PortNumber 9100
+   Add-Printer -Name "LABEL (Protegida)" -DriverName "LABEL" -PortName "LabelGuard_9100"
+   Set-PrintConfiguration -PrinterName "LABEL (Protegida)" -PrintTicketXml (Get-PrintConfiguration -PrinterName "LABEL").PrintTicketXML
+   ```
+
+2. Iniciar o LabelGuard:
+
+   ```bash
+   dotnet run --project src/LabelGuard.Server -- --impressora LABEL
+   ```
+
+3. No Papersystem, imprimir na fila `LABEL (Protegida)`. Cada etiqueta liberada vira um
+   documento separado na fila `LABEL`; as repetidas aparecem em vermelho no console.
+
+O histórico fica em `C:\ProgramData\LabelGuard\historico.db`.
+
+Para desfazer: `Remove-Printer -Name "LABEL (Protegida)"` e `Remove-PrinterPort -Name "LabelGuard_9100"`.
 
 ## Analisar um trabalho capturado
 
