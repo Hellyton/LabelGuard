@@ -106,34 +106,40 @@ resultado). Só a porta dela passa a ser o LabelGuard. Uma segunda fila na USB r
 etiquetas liberadas em modo RAW, que não passa pelo driver:
 
 ```
-Papersystem -> "LABEL" (porta 127.0.0.1:9100) -> LabelGuard.Server -> "LABEL (Saida USB)" (USB001, RAW) -> impressora
+Papersystem -> "LABEL" (porta 127.0.0.1:9100) -> LabelGuard.Server -> "LabelGuard - NAO USAR" (USB001, RAW) -> impressora
 ```
 
 1. Configurar as filas (PowerShell como administrador):
 
    ```powershell
    Add-PrinterPort -Name "LabelGuard_9100" -PrinterHostAddress "127.0.0.1" -PortNumber 9100
-   Add-Printer -Name "LABEL (Saida USB)" -DriverName "LABEL" -PortName "USB001"
+   Add-Printer -Name "LabelGuard - NAO USAR" -DriverName "LABEL" -PortName "USB001"
    Set-Printer -Name "LABEL" -PortName "LabelGuard_9100"
    ```
 
 2. Iniciar o LabelGuard:
 
    ```bash
-   dotnet run --project src/LabelGuard.Server -- --impressora "LABEL (Saida USB)"
+   dotnet run --project src/LabelGuard.Server -- --impressora "LabelGuard - NAO USAR"
    ```
 
-3. Imprimir pelo Papersystem normalmente. As repetidas aparecem em vermelho no console.
+3. Imprimir pelo Papersystem normalmente, **na fila `LABEL`**. As repetidas aparecem em
+   vermelho no console. Nunca imprimir direto na `LabelGuard - NAO USAR`: a etiqueta sai sem
+   proteção e com a configuração padrão do driver (layout errado).
    Com o LabelGuard fechado, os trabalhos ficam parados na fila `LABEL` e saem quando ele abrir.
 
 `--salvar <pasta>` grava cada trabalho recebido, para comparar com uma captura direta.
+
+Se a etiqueta sair desalinhada mesmo com o trabalho idêntico à captura original, imprimir
+uma vez sem o LabelGuard (`Set-Printer -Name "LABEL" -PortName "USB001"`). Se também sair
+errado, o problema é a impressora (calibração do sensor de gap ou defeito), não o LabelGuard.
 O histórico fica em `C:\ProgramData\LabelGuard\historico.db`.
 
 Para desfazer:
 
 ```powershell
 Set-Printer -Name "LABEL" -PortName "USB001"
-Remove-Printer -Name "LABEL (Saida USB)"
+Remove-Printer -Name "LabelGuard - NAO USAR"
 Remove-PrinterPort -Name "LabelGuard_9100"
 ```
 
