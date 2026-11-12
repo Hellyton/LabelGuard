@@ -12,8 +12,11 @@ public static class BarcodeScanner
         {
             var source = new RGBLuminanceSource(
                 bitmap.ToGray8(label.RawData), bitmap.WidthDots, bitmap.Height, RGBLuminanceSource.BitmapFormat.Gray8);
-            var reader = new BarcodeReaderGeneric { AutoRotate = true, Options = { TryHarder = true } };
-            var results = reader.DecodeMultiple(source);
+
+            // Caminho rápido (~6 ms): só QR, como o do Papersystem. Se falhar, tenta todos os formatos com mais esforço (~40 ms).
+            var fast = new BarcodeReaderGeneric { Options = { PossibleFormats = new[] { BarcodeFormat.QR_CODE } } };
+            var results = fast.DecodeMultiple(source)
+                ?? new BarcodeReaderGeneric { AutoRotate = true, Options = { TryHarder = true } }.DecodeMultiple(source);
             if (results is not null)
                 texts.AddRange(results.Select(r => r.Text));
         }
