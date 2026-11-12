@@ -105,6 +105,15 @@ dotnet run --project tools/LabelGuard.Inspect -- C:\temp\etiqueta.prn [mais arqu
 Mostra cada etiqueta do trabalho, o ID lido e se ele já apareceu antes (no mesmo
 arquivo ou em um arquivo anterior da lista). `--codes` mostra o conteúdo dos QR codes.
 
+Para simular o LabelGuard completo, com histórico gravado entre execuções:
+
+```bash
+dotnet run --project tools/LabelGuard.Inspect -- C:	emp\etiqueta.prn --db C:	emp\historico.db [--saida C:	emp\liberadas.prn]
+```
+
+Na primeira vez as etiquetas saem como IMPRESSA; repetindo o comando, saem como
+BLOQUEADA. `--saida` grava o que seria enviado à impressora. Apague o `.db` para recomeçar.
+
 ## Extração do identificador
 
 `LabelSplitter` detecta a linguagem do trabalho e separa as etiquetas:
