@@ -50,7 +50,7 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git
 - [x] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL, TSPL) e achar o ID por expressão regular configurável
-- [ ] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
+- [x] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
 - [ ] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
 - [ ] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio para impressora de rede
 - [ ] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, envio para impressora USB
@@ -63,6 +63,20 @@ src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
 tools/LabelGuard.Inspect  analisa trabalhos capturados em arquivo (.prn)
 ```
+
+## Histórico
+
+`LabelHistory` guarda em SQLite (Microsoft.Data.Sqlite):
+
+| Tabela   | Conteúdo                                                                 |
+|----------|--------------------------------------------------------------------------|
+| `prints` | cada impressão: ID, data/hora (UTC), supervisor que autorizou, trabalho  |
+| `events` | log: impressa, bloqueada, reimpressão autorizada, sem ID, erro           |
+
+Um índice único parcial (`label_id` onde `authorized_by IS NULL`) garante no próprio
+banco que cada ID tem só uma impressão sem autorização. `TryRecordPrint` retorna
+`false` para um ID já impresso, mesmo com trabalhos chegando ao mesmo tempo.
+Reimpressões liberadas entram com o nome do supervisor.
 
 ## Analisar um trabalho capturado
 
