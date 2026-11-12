@@ -46,13 +46,20 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 - Zebra (ZPL): `^XA^JZN^XZ`
 - TSC (TSPL): `SET REPRINT OFF`
 
+Confirmado no teste com a POS-9210: com a bobina acabando na 3938, a impressora imprimiu
+3938, 3939 e de novo 3938, sem nenhum trabalho novo chegar ao LabelGuard. Por isso o
+LabelGuard.Server envia `SET REPRINT OFF` antes de cada etiqueta liberada (desligável com
+`--manter-reimpressao`). Com a reimpressão desligada, a etiqueta que estava saindo no
+momento do erro pode se perder; ela já consta como impressa e precisa de reimpressão
+autorizada.
+
 ## Etapas de desenvolvimento
 
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git
 - [x] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL, TSPL) e achar o ID por expressão regular configurável
 - [x] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
 - [x] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
-- [ ] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio para impressora de rede
+- [x] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio RAW para a impressora USB pelo spooler
 - [ ] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, envio para impressora USB
 - [ ] **7. Instalação** – script PowerShell que cria a impressora protegida, guia de configuração
 
@@ -61,6 +68,8 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 ```
 src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
+src/LabelGuard.Windows  envio RAW para filas do Windows (winspool)
+src/LabelGuard.Server   executável de console: receptor + motor + envio
 tools/LabelGuard.Inspect  analisa trabalhos capturados em arquivo (.prn)
 ```
 
@@ -95,6 +104,66 @@ Reimpressões liberadas entram com o nome do supervisor.
 O ID é reservado no histórico antes do envio e liberado se o envio falhar: uma
 etiqueta que não saiu não fica marcada como impressa. Etiquetas bloqueadas podem
 ser liberadas com `AuthorizeAsync`, que registra o supervisor.
+
+## Testar com a impressora
+
+O Papersystem continua imprimindo na fila `LABEL`, com o mesmo driver e configuração
+(o driver desenha a etiqueta como imagem, e qualquer diferença de configuração muda o
+resultado). Só a porta dela passa a ser o LabelGuard. Uma segunda fila na USB recebe as
+etiquetas liberadas em modo RAW, que não passa pelo driver:
+
+```
+Papersystem -> "LABEL" (porta 127.0.0.1:9100) -> LabelGuard.Server -> "LabelGuard - NAO USAR" (USB001, RAW) -> impressora
+```
+
+1. Configurar as filas (PowerShell como administrador):
+
+   ```powershell
+   Add-PrinterPort -Name "LabelGuard_9100" -PrinterHostAddress "127.0.0.1" -PortNumber 9100
+   Add-Printer -Name "LabelGuard - NAO USAR" -DriverName "LABEL" -PortName "USB001"
+   Set-Printer -Name "LABEL" -PortName "LabelGuard_9100"
+   ```
+
+2. Iniciar o LabelGuard:
+
+   ```bash
+   dotnet run --project src/LabelGuard.Server -- --impressora "LabelGuard - NAO USAR"
+   ```
+
+3. Imprimir pelo Papersystem normalmente, **na fila `LABEL`**. As repetidas aparecem em
+   vermelho no console. Nunca imprimir direto na `LabelGuard - NAO USAR`: a etiqueta sai sem
+   proteção e com a configuração padrão do driver (layout errado).
+   Com o LabelGuard fechado, os trabalhos ficam parados na fila `LABEL` e saem quando ele abrir.
+
+`--salvar <pasta>` grava cada trabalho recebido, para comparar com uma captura direta.
+
+Se a etiqueta sair desalinhada mesmo com o trabalho idêntico à captura original, imprimir
+uma vez sem o LabelGuard (`Set-Printer -Name "LABEL" -PortName "USB001"`). Se também sair
+errado, o problema é a impressora (calibração do sensor de gap ou defeito), não o LabelGuard.
+O histórico fica em `C:\ProgramData\LabelGuard\historico.db`.
+
+Para desfazer:
+
+```powershell
+Set-Printer -Name "LABEL" -PortName "USB001"
+Remove-Printer -Name "LabelGuard - NAO USAR"
+Remove-PrinterPort -Name "LabelGuard_9100"
+```
+
+## Testar o fim de bobina gastando poucas etiquetas
+
+A reimpressão automática acontece em qualquer erro da impressora: sem papel, sem ribbon
+ou tampa aberta. Abrir a tampa (ou puxar a fita para fora do sensor) durante a impressão
+simula o fim de bobina.
+
+1. Iniciar o servidor com um histórico só para o teste:
+   `dotnet run --project src/LabelGuard.Server -- --impressora "LabelGuard - NAO USAR" --db C:\temp\teste.db`
+2. Enviar um trabalho curto (3 etiquetas) sem passar pelo Papersystem:
+   `powershell -ExecutionPolicy Bypass -File tools\enviar.ps1 C:\temp\teste3.prn`
+3. Abrir a tampa enquanto a 2ª etiqueta sai, fechar e deixar retomar.
+4. Contar as etiquetas. Para repetir: Ctrl+C no servidor, apagar `C:\temp\teste.db*` e voltar ao passo 1.
+
+Para comparar com a impressora reimprimindo, iniciar com `--manter-reimpressao`.
 
 ## Analisar um trabalho capturado
 

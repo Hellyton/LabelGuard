@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Globalization;
 using LabelGuard.Core.Guard;
 using LabelGuard.Core.History;
 using LabelGuard.Core.Parsing;
@@ -97,7 +96,7 @@ async Task<int> SimulateAsync(string db, string? output)
         var result = await guard.ProcessAsync(File.ReadAllBytes(file), Path.GetFileName(file), sender);
         Console.WriteLine($"{file}: {result.Labels.Count} etiqueta(s)");
         foreach (var l in result.Labels)
-            Console.WriteLine($"  #{l.Index,-4} id={l.Id ?? "-",-10} {Describe(l)}");
+            Console.WriteLine($"  #{l.Index,-4} id={l.Id ?? "-",-10} {l.Describe()}");
 
         var printed = result.Labels.Count(l => l.Status == LabelStatus.Printed);
         var blocked = result.Blocked.Count();
@@ -108,18 +107,6 @@ async Task<int> SimulateAsync(string db, string? output)
         Console.WriteLine($"Etiquetas liberadas gravadas em: {Path.GetFullPath(output)}");
     return 0;
 }
-
-static string Describe(LabelOutcome l) => l.Status switch
-{
-    LabelStatus.Printed => "IMPRESSA",
-    LabelStatus.Duplicate when l.PreviousPrints.Count > 0 =>
-        $"BLOQUEADA: já impressa em {l.PreviousPrints[0].PrintedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture)} ({l.PreviousPrints[0].Job})",
-    LabelStatus.Duplicate => "BLOQUEADA: já impressa",
-    LabelStatus.MultipleCopies => $"BLOQUEADA: pede {l.Label.Copies} cópias",
-    LabelStatus.NoId => "BLOQUEADA: ID não encontrado",
-    LabelStatus.Failed => $"FALHA: {l.Error}",
-    _ => "não enviada",
-};
 
 /// <summary>Em vez da impressora, grava as etiquetas liberadas em arquivo (ou descarta, sem --saida).</summary>
 sealed class FileSender(string? path) : ILabelSender
