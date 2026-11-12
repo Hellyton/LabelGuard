@@ -49,7 +49,7 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 ## Etapas de desenvolvimento
 
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git
-- [ ] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL e outros) e achar o ID por expressão regular configurável
+- [x] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL, TSPL) e achar o ID por expressão regular configurável
 - [ ] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
 - [ ] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
 - [ ] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio para impressora de rede
@@ -62,6 +62,22 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
 ```
+
+## Extração do identificador
+
+`LabelSplitter` detecta a linguagem do trabalho e separa as etiquetas:
+
+| Linguagem | Detecção          | Fim de cada etiqueta | Cópias        |
+|-----------|-------------------|----------------------|---------------|
+| ZPL       | contém `^XA`      | `^XZ`                | `^PQn`        |
+| TSPL      | linha `PRINT m`   | linha `PRINT m[,n]`  | `m × n`       |
+| outra     | -                 | trabalho inteiro     | 1             |
+
+Os bytes originais de cada etiqueta são mantidos para reenvio sem alteração.
+
+`IdExtractor` acha o ID com uma expressão regular que tem o grupo nomeado `id`.
+Padrão inicial: `(?<!\d)(?<id>\d{7})(?!\d)` (7 dígitos isolados, ex.: 1196924).
+Esse padrão deve ser ajustado depois de capturar um trabalho real do Papersystem.
 
 ## Compilar e testar
 
