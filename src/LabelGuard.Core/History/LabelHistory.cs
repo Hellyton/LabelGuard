@@ -72,6 +72,20 @@ public sealed class LabelHistory : IDisposable
         }
     }
 
+    /// <summary>
+    /// Desfaz a primeira impressão registrada por <see cref="TryRecordPrint"/> quando o envio para a impressora falhou.
+    /// Reimpressões autorizadas não são afetadas.
+    /// </summary>
+    public bool ReleasePrint(string labelId)
+    {
+        lock (_lock)
+        {
+            using var command = Command(
+                "DELETE FROM prints WHERE label_id = $id AND authorized_by IS NULL", ("$id", labelId));
+            return command.ExecuteNonQuery() == 1;
+        }
+    }
+
     /// <summary>Registra uma reimpressão liberada por um supervisor.</summary>
     public void RecordAuthorizedReprint(string labelId, string supervisor, string? job = null)
     {

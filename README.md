@@ -51,7 +51,7 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git
 - [x] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL, TSPL) e achar o ID por expressão regular configurável
 - [x] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
-- [ ] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
+- [x] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
 - [ ] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio para impressora de rede
 - [ ] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, envio para impressora USB
 - [ ] **7. Instalação** – script PowerShell que cria a impressora protegida, guia de configuração
@@ -77,6 +77,24 @@ Um índice único parcial (`label_id` onde `authorized_by IS NULL`) garante no p
 banco que cada ID tem só uma impressão sem autorização. `TryRecordPrint` retorna
 `false` para um ID já impresso, mesmo com trabalhos chegando ao mesmo tempo.
 Reimpressões liberadas entram com o nome do supervisor.
+
+## Motor de decisão
+
+`PrintGuard` processa cada trabalho etiqueta por etiqueta, na ordem:
+
+| Situação                                   | Resultado        |
+|--------------------------------------------|------------------|
+| ID novo                                    | imprime          |
+| ID já impresso (antes ou no mesmo trabalho) | bloqueia         |
+| etiqueta pede mais de 1 cópia              | bloqueia (*)     |
+| ID não encontrado                          | bloqueia (*)     |
+| envio para a impressora falhou             | ID liberado, resto do trabalho não é enviado |
+
+(*) configurável em `GuardOptions`.
+
+O ID é reservado no histórico antes do envio e liberado se o envio falhar: uma
+etiqueta que não saiu não fica marcada como impressa. Etiquetas bloqueadas podem
+ser liberadas com `AuthorizeAsync`, que registra o supervisor.
 
 ## Analisar um trabalho capturado
 
