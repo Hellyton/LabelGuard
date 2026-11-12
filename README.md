@@ -150,6 +150,21 @@ Remove-Printer -Name "LabelGuard - NAO USAR"
 Remove-PrinterPort -Name "LabelGuard_9100"
 ```
 
+## Testar o fim de bobina gastando poucas etiquetas
+
+A reimpressão automática acontece em qualquer erro da impressora: sem papel, sem ribbon
+ou tampa aberta. Abrir a tampa (ou puxar a fita para fora do sensor) durante a impressão
+simula o fim de bobina.
+
+1. Iniciar o servidor com um histórico só para o teste:
+   `dotnet run --project src/LabelGuard.Server -- --impressora "LabelGuard - NAO USAR" --db C:\temp\teste.db`
+2. Enviar um trabalho curto (3 etiquetas) sem passar pelo Papersystem:
+   `powershell -ExecutionPolicy Bypass -File tools\enviar.ps1 C:\temp\teste3.prn`
+3. Abrir a tampa enquanto a 2ª etiqueta sai, fechar e deixar retomar.
+4. Contar as etiquetas. Para repetir: Ctrl+C no servidor, apagar `C:\temp\teste.db*` e voltar ao passo 1.
+
+Para comparar com a impressora reimprimindo, iniciar com `--manter-reimpressao`.
+
 ## Analisar um trabalho capturado
 
 ```bash
