@@ -49,7 +49,7 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 ## Etapas de desenvolvimento
 
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git
-- [ ] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL e outros) e achar o ID por expressão regular configurável
+- [x] **2. Extração do identificador** – separar etiquetas de um trabalho (ZPL, TSPL) e achar o ID por expressão regular configurável
 - [ ] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
 - [ ] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
 - [ ] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio para impressora de rede
@@ -61,7 +61,46 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 ```
 src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
+tools/LabelGuard.Inspect  analisa trabalhos capturados em arquivo (.prn)
 ```
+
+## Analisar um trabalho capturado
+
+```bash
+dotnet run --project tools/LabelGuard.Inspect -- C:\temp\etiqueta.prn [mais arquivos] [--codes] [--pattern "<regex>"]
+```
+
+Mostra cada etiqueta do trabalho, o ID lido e se ele já apareceu antes (no mesmo
+arquivo ou em um arquivo anterior da lista). `--codes` mostra o conteúdo dos QR codes.
+
+## Extração do identificador
+
+`LabelSplitter` detecta a linguagem do trabalho e separa as etiquetas:
+
+| Linguagem | Detecção          | Fim de cada etiqueta | Cópias        |
+|-----------|-------------------|----------------------|---------------|
+| ZPL       | contém `^XA`      | `^XZ`                | `^PQn`        |
+| TSPL      | linha `PRINT m`   | linha `PRINT m[,n]`  | `m × n`       |
+| outra     | -                 | trabalho inteiro     | 1             |
+
+Os bytes originais de cada etiqueta são mantidos para reenvio sem alteração.
+
+### Impressora POS-9210 (driver Windows)
+
+O driver envia TSPL com a etiqueta inteira como imagem (`BITMAP`), sem texto legível.
+O identificador é lido do QR code impresso pelo Papersystem:
+
+```
+https://app.papersystem.com.br/d/etiqueta?pallet=3931&fornecedor=...&largura=1500&...
+```
+
+`BarcodeScanner` converte o bitmap e decodifica o QR (ZXing.Net). `IdExtractor` aplica
+uma expressão regular com o grupo nomeado `id`, primeiro no conteúdo dos códigos e depois
+nos comandos de texto. Padrão inicial: `[?&]pallet=(?<id>\d+)` (número do pallet).
+
+Para capturar um trabalho real: nas propriedades da impressora, aba Portas, adicionar
+uma Local Port com o caminho de um arquivo (ex.: `C:\temp\etiqueta.prn`), imprimir e
+depois voltar a porta original.
 
 ## Compilar e testar
 
