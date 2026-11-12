@@ -46,6 +46,13 @@ consegue barrar. Essa função precisa ser desligada na impressora:
 - Zebra (ZPL): `^XA^JZN^XZ`
 - TSC (TSPL): `SET REPRINT OFF`
 
+Confirmado no teste com a POS-9210: com a bobina acabando na 3938, a impressora imprimiu
+3938, 3939 e de novo 3938, sem nenhum trabalho novo chegar ao LabelGuard. Por isso o
+LabelGuard.Server envia `SET REPRINT OFF` antes de cada etiqueta liberada (desligável com
+`--manter-reimpressao`). Com a reimpressão desligada, a etiqueta que estava saindo no
+momento do erro pode se perder; ela já consta como impressa e precisa de reimpressão
+autorizada.
+
 ## Etapas de desenvolvimento
 
 - [x] **1. Estrutura** – solução .NET 8, projetos `Core` e `Tests`, repositório git

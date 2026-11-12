@@ -16,6 +16,7 @@ var dbPath = Path.Combine(
 var pattern = IdExtractor.DefaultPattern;
 var options = new GuardOptions();
 string? saveDir = null;
+var reprintOff = true;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -36,6 +37,9 @@ for (var i = 0; i < args.Length; i++)
         case "--salvar" when i + 1 < args.Length:
             saveDir = args[++i];
             break;
+        case "--manter-reimpressao":
+            reprintOff = false;
+            break;
         case "--imprimir-sem-id":
             options = options with { PrintWithoutId = true };
             break;
@@ -53,10 +57,11 @@ for (var i = 0; i < args.Length; i++)
 if (printer is null)
 {
     Console.WriteLine("Uso: LabelGuard.Server --impressora <fila real> [--porta 9100] [--db <arquivo>] [--pattern <regex>]");
-    Console.WriteLine("                       [--imprimir-sem-id] [--permitir-copias] [--salvar <pasta>]");
+    Console.WriteLine("                       [--imprimir-sem-id] [--permitir-copias] [--salvar <pasta>] [--manter-reimpressao]");
     Console.WriteLine("  --impressora  fila do Windows ligada à impressora de verdade (ex.: \"LABEL (Saida USB)\")");
     Console.WriteLine("  --db          histórico, padrão: " + dbPath);
     Console.WriteLine("  --salvar      grava cada trabalho recebido nessa pasta (.prn), para diagnóstico");
+    Console.WriteLine("  --manter-reimpressao  não envia SET REPRINT OFF (TSPL) antes de cada etiqueta");
     return 1;
 }
 
@@ -75,7 +80,9 @@ if (saveDir is not null)
     Directory.CreateDirectory(saveDir);
 using var history = new LabelHistory(dbPath);
 var guard = new PrintGuard(history, new IdExtractor(pattern), options);
-var sender = new RawPrinterSender(printer);
+ILabelSender sender = new RawPrinterSender(printer);
+if (reprintOff)
+    sender = new CommandPrefixSender(sender, CommandPrefixSender.TsplReprintOff);
 var consoleLock = new object();
 
 var receiver = new TcpJobReceiver(new IPEndPoint(IPAddress.Loopback, port), HandleJobAsync, Log);
@@ -100,6 +107,8 @@ Log($"LabelGuard ouvindo em {receiver.LocalEndpoint}, enviando para '{printer}'"
 Log($"Histórico: {Path.GetFullPath(dbPath)}");
 if (saveDir is not null)
     Log($"Trabalhos recebidos gravados em: {Path.GetFullPath(saveDir)}");
+if (reprintOff)
+    Log("Reimpressão automática da impressora desligada (SET REPRINT OFF antes de cada etiqueta)");
 Log("Ctrl+C para parar.");
 await receiver.RunAsync(cts.Token);
 Log("Parado.");
