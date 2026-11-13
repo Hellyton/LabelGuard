@@ -124,10 +124,12 @@ ser liberadas com `AuthorizeAsync`, que registra o supervisor.
    ```
 
    Cria `dist\LabelGuard` e `dist\LabelGuard.zip`: `LabelGuard.App.exe` autocontido (não precisa
-   de .NET na máquina), `instalar.ps1`, `desinstalar.ps1`, `desligar-reimpressao.ps1` e `LEIA-ME.txt`.
+   de .NET na máquina), `INSTALAR.cmd`, `DESINSTALAR.cmd`, `instalar.ps1`, `desinstalar.ps1`,
+   `desligar-reimpressao.ps1` e `LEIA-ME.txt`.
 
 2. Na máquina da produção, com a impressora já imprimindo pelo Papersystem na fila `LABEL`,
-   abrir o PowerShell como administrador na pasta do pacote:
+   dar duplo clique em `INSTALAR.cmd` (pede a permissão de administrador e roda `instalar.ps1`).
+   Para opções, abrir o PowerShell como administrador na pasta do pacote:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular   # mostra o que faria
