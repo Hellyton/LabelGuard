@@ -71,7 +71,7 @@ internal static class Program
         try
         {
             RawPrinterSender.EnsurePrinterExists(config.OutputPrinter);
-            extractor = new IdExtractor(config.IdPattern);
+            extractor = new IdExtractor(config.EffectiveIdPattern);
         }
         catch (Exception ex)
         {

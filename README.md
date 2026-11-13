@@ -132,7 +132,7 @@ terminal: com `dotnet run`, fechar o terminal fecha o LabelGuard junto e a fila 
   |------------------------|---------------------------|--------------------------------------------------|
   | `outputPrinter`        | `LabelGuard - NAO USAR`   | fila ligada à impressora (recebe as liberadas)   |
   | `port`                 | `9100`                    | porta local da fila protegida                    |
-  | `idPattern`            | `[?&]pallet=(?<id>\d+)`   | expressão regular do ID                          |
+  | `idPattern`            | vazio (padrão do ID)      | expressão regular do ID                          |
   | `printWithoutId`       | `false`                   | imprimir etiquetas sem ID em vez de bloquear     |
   | `allowMultipleCopies`  | `false`                   | aceitar etiquetas com mais de 1 cópia            |
   | `printerReprintOff`    | `true`                    | enviar `SET REPRINT OFF` antes de cada etiqueta  |
@@ -247,7 +247,14 @@ https://app.papersystem.com.br/d/etiqueta?pallet=3931&fornecedor=...&largura=150
 
 `BarcodeScanner` converte o bitmap e decodifica o QR (ZXing.Net). `IdExtractor` aplica
 uma expressão regular com o grupo nomeado `id`, primeiro no conteúdo dos códigos e depois
-nos comandos de texto. Padrão inicial: `[?&]pallet=(?<id>\d+)` (número do pallet).
+nos comandos de texto. Padrão: `(?:[?&]pallet=|"pallet"\s*:\s*"?)(?<id>\d+)` (número do pallet).
+
+O Papersystem usa dois formatos de QR, e o padrão reconhece os dois:
+
+| Etiqueta                          | Conteúdo do QR                                               |
+|-----------------------------------|--------------------------------------------------------------|
+| cliente (ex.: NICIOLI)            | `https://app.papersystem.com.br/d/etiqueta?pallet=3931&...`  |
+| interna (Produção: ADFLOG, MIOLO) | `{"fornecedor":"ADF",...,"pallet":"1415",...}`               |
 
 Para capturar um trabalho real: nas propriedades da impressora, aba Portas, adicionar
 uma Local Port com o caminho de um arquivo (ex.: `C:\temp\etiqueta.prn`), imprimir e

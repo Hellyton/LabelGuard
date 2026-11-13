@@ -22,7 +22,8 @@ public class ConfigTests : IDisposable
 
         Assert.Equal("LabelGuard - NAO USAR", config.OutputPrinter);
         Assert.Equal(9100, config.Port);
-        Assert.Equal(IdExtractor.DefaultPattern, config.IdPattern);
+        Assert.Null(config.IdPattern);
+        Assert.Equal(IdExtractor.DefaultPattern, config.EffectiveIdPattern);
         Assert.True(config.PrinterReprintOff);
         Assert.Null(config.SupervisorPasswordHash);
     }
@@ -77,6 +78,13 @@ public class ConfigTests : IDisposable
         File.WriteAllText(ConfigPath, "{ isto nao e json");
 
         Assert.Throws<InvalidDataException>(() => LabelGuardConfig.Load(ConfigPath));
+    }
+
+    [Fact]
+    public void IdPattern_OverridesDefault()
+    {
+        Assert.Equal(@"ID:(?<id>\d+)", new LabelGuardConfig { IdPattern = @"ID:(?<id>\d+)" }.EffectiveIdPattern);
+        Assert.Equal(IdExtractor.DefaultPattern, new LabelGuardConfig { IdPattern = " " }.EffectiveIdPattern);
     }
 
     [Fact]

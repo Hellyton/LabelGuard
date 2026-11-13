@@ -31,8 +31,11 @@ public sealed class LabelGuardConfig
     /// <summary>Porta TCP local da fila protegida.</summary>
     public int Port { get; set; } = 9100;
 
-    /// <summary>Expressão regular do ID, com grupo nomeado <c>id</c>.</summary>
-    public string IdPattern { get; set; } = IdExtractor.DefaultPattern;
+    /// <summary>Expressão regular do ID, com grupo nomeado <c>id</c>; vazio = padrão do LabelGuard.</summary>
+    public string? IdPattern { get; set; }
+
+    /// <summary><see cref="IdPattern"/>, ou o padrão do LabelGuard se estiver vazio.</summary>
+    public string EffectiveIdPattern => string.IsNullOrWhiteSpace(IdPattern) ? IdExtractor.DefaultPattern : IdPattern;
 
     public bool PrintWithoutId { get; set; }
 

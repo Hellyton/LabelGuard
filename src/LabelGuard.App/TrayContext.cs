@@ -111,16 +111,19 @@ internal sealed class TrayContext : ApplicationContext
         var password = NewPasswordForm.Ask(null, "Nova senha do supervisor:");
         if (password is null)
             return;
-        var previous = _config.SupervisorPasswordHash;
-        _config.SupervisorPasswordHash = SupervisorPassword.Hash(password);
+        var hash = SupervisorPassword.Hash(password);
         try
         {
-            _config.Save(_configPath);
+            // Relê o arquivo: mudanças feitas à mão com o LabelGuard aberto não podem ser perdidas.
+            var onDisk = LabelGuardConfig.Load(_configPath);
+            onDisk.SupervisorPasswordHash = hash;
+            onDisk.Save(_configPath);
+            _config.SupervisorPasswordHash = hash;
+            AppLog.Write("Senha do supervisor alterada");
             Dialogs.Info("Senha alterada.");
         }
         catch (Exception ex)
         {
-            _config.SupervisorPasswordHash = previous;
             Dialogs.Error($"Não foi possível gravar a nova senha: {ex.Message}");
         }
     }
