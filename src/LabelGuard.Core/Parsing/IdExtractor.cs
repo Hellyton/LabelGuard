@@ -6,10 +6,10 @@ namespace LabelGuard.Core.Parsing;
 public sealed class IdExtractor
 {
     /// <summary>
-    /// Padrão inicial: número do pallet no QR code do Papersystem,
-    /// ex.: https://app.papersystem.com.br/d/etiqueta?pallet=3931&amp;...
+    /// Padrão inicial: número do pallet no QR code do Papersystem, nos dois formatos usados:
+    /// link (https://app.papersystem.com.br/d/etiqueta?pallet=3931&amp;...) e JSON ({"pallet":"1415",...}).
     /// </summary>
-    public const string DefaultPattern = @"[?&]pallet=(?<id>\d+)";
+    public const string DefaultPattern = @"(?:[?&]pallet=|""pallet""\s*:\s*""?)(?<id>\d+)";
 
     private const string IdGroup = "id";
 

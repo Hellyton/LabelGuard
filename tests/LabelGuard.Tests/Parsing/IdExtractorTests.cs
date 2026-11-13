@@ -7,9 +7,15 @@ public class IdExtractorTests
     private const string PapersystemQr =
         "https://app.papersystem.com.br/d/etiqueta?pallet=3931&fornecedor=CLIENTE%20TESTE&largura=1500&t=1";
 
+    // Etiqueta interna (Produção: ADFLOG): o QR traz JSON em vez do link.
+    private const string PapersystemJsonQr =
+        "{\"fornecedor\":\"ADF\",\"largura\":\"1830\",\"gramatura\":\"120\",\"pallet\":\"1415\",\"codigocliente\":\"MIOLO\",\"peso\":\"1559.00\",\"quantidadepc\":\"1\",\"t\":1}";
+
     [Theory]
     [InlineData(PapersystemQr, "3931")]
     [InlineData("https://app.papersystem.com.br/d/etiqueta?t=1&pallet=42", "42")]
+    [InlineData(PapersystemJsonQr, "1415")]
+    [InlineData("{\"pallet\": 77, \"t\": 1}", "77")]
     public void DefaultPattern_FindsPalletNumber(string text, string expected)
     {
         Assert.Equal(expected, new IdExtractor().Extract(text));
@@ -19,6 +25,7 @@ public class IdExtractorTests
     [InlineData("https://app.papersystem.com.br/d/etiqueta?largura=1500")]
     [InlineData("PALLET 3931")]
     [InlineData("?codigopallet=3931")]
+    [InlineData("{\"codigopallet\":\"3931\"}")]
     [InlineData("")]
     public void DefaultPattern_ReturnsNullWithoutId(string text)
     {
@@ -31,6 +38,14 @@ public class IdExtractorTests
         var label = Assert.Single(LabelSplitter.Split(TsplJob.WithQrCode(PapersystemQr)));
 
         Assert.Equal("3931", new IdExtractor().Extract(label));
+    }
+
+    [Fact]
+    public void Label_ReadsIdFromJsonQrCodeInBitmap()
+    {
+        var label = Assert.Single(LabelSplitter.Split(TsplJob.WithQrCode(PapersystemJsonQr)));
+
+        Assert.Equal("1415", new IdExtractor().Extract(label));
     }
 
     [Fact]

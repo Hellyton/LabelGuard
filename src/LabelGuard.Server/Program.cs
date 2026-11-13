@@ -1,9 +1,9 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 using LabelGuard.Core.Guard;
 using LabelGuard.Core.History;
+using LabelGuard.Core.Hosting;
 using LabelGuard.Core.Parsing;
-using LabelGuard.Core.Receiving;
 using LabelGuard.Windows;
 
 // Recebe os trabalhos da fila protegida (porta TCP local), bloqueia etiquetas repetidas
@@ -58,7 +58,7 @@ if (printer is null)
 {
     Console.WriteLine("Uso: LabelGuard.Server --impressora <fila real> [--porta 9100] [--db <arquivo>] [--pattern <regex>]");
     Console.WriteLine("                       [--imprimir-sem-id] [--permitir-copias] [--salvar <pasta>] [--manter-reimpressao]");
-    Console.WriteLine("  --impressora  fila do Windows ligada à impressora de verdade (ex.: \"LABEL (Saida USB)\")");
+    Console.WriteLine("  --impressora  fila do Windows ligada à impressora de verdade (ex.: \"LabelGuard - NAO USAR\")");
     Console.WriteLine("  --db          histórico, padrão: " + dbPath);
     Console.WriteLine("  --salvar      grava cada trabalho recebido nessa pasta (.prn), para diagnóstico");
     Console.WriteLine("  --manter-reimpressao  não envia SET REPRINT OFF (TSPL) antes de cada etiqueta");
@@ -76,8 +76,6 @@ catch (Exception ex)
 }
 
 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dbPath))!);
-if (saveDir is not null)
-    Directory.CreateDirectory(saveDir);
 using var history = new LabelHistory(dbPath);
 var guard = new PrintGuard(history, new IdExtractor(pattern), options);
 ILabelSender sender = new RawPrinterSender(printer);
@@ -85,10 +83,12 @@ if (reprintOff)
     sender = new CommandPrefixSender(sender, CommandPrefixSender.TsplReprintOff);
 var consoleLock = new object();
 
-var receiver = new TcpJobReceiver(new IPEndPoint(IPAddress.Loopback, port), HandleJobAsync, Log);
+await using var host = new GuardHost(guard, sender, new IPEndPoint(IPAddress.Loopback, port), saveDir);
+host.JobProcessed += ShowResult;
+host.Message += Log;
 try
 {
-    receiver.Start();
+    host.Start();
 }
 catch (SocketException ex)
 {
@@ -96,32 +96,31 @@ catch (SocketException ex)
     return 1;
 }
 
-using var cts = new CancellationTokenSource();
+var stop = new TaskCompletionSource();
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
-    cts.Cancel();
+    stop.TrySetResult();
 };
 
-Log($"LabelGuard ouvindo em {receiver.LocalEndpoint}, enviando para '{printer}'");
+Log($"LabelGuard ouvindo em {host.LocalEndpoint}, enviando para '{printer}'");
 Log($"Histórico: {Path.GetFullPath(dbPath)}");
 if (saveDir is not null)
     Log($"Trabalhos recebidos gravados em: {Path.GetFullPath(saveDir)}");
 if (reprintOff)
     Log("Reimpressão automática da impressora desligada (SET REPRINT OFF antes de cada etiqueta)");
 Log("Ctrl+C para parar.");
-await receiver.RunAsync(cts.Token);
+await stop.Task;
+await host.StopAsync();
 Log("Parado.");
 return 0;
 
-async Task HandleJobAsync(ReceivedJob job, CancellationToken cancellationToken)
+void ShowResult(JobResult result)
 {
-    if (saveDir is not null)
-        await File.WriteAllBytesAsync(Path.Combine(saveDir, job.Name + ".prn"), job.Data, cancellationToken);
-    var result = await guard.ProcessAsync(job.Data, job.Name, sender, cancellationToken);
     lock (consoleLock)
     {
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Trabalho {job.Name}: {job.Data.Length:N0} bytes, {result.Labels.Count} etiqueta(s)");
+        var bytes = result.Labels.Sum(l => (long)l.Label.RawData.Length);
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Trabalho {result.Job}: {bytes:N0} bytes, {result.Labels.Count} etiqueta(s)");
         foreach (var label in result.Labels)
         {
             Console.ForegroundColor = label.Status == LabelStatus.Printed ? ConsoleColor.Green : ConsoleColor.Red;
