@@ -224,6 +224,76 @@ public class PrintGuardTests : IDisposable
         Assert.Equal("3931", blocked.Id);
     }
 
+    [Fact]
+    public async Task PrintedLabel_IsStoredForReprint()
+    {
+        await Guard().ProcessAsync(Job(Zpl("3931"), Zpl("3932")), "job-1", _sender);
+
+        Assert.Equal(Zpl("3931"), Encoding.Latin1.GetString(_history.GetLabelImage("3931")!.Data));
+        Assert.Equal("job-1", _history.GetLabelImage("3932")!.Job);
+    }
+
+    [Fact]
+    public async Task BlockedOrFailedLabel_IsNotStored()
+    {
+        _sender.FailOnCall = 1;
+
+        await Guard().ProcessAsync(Job(Zpl("3931"), "^XA^FDsem id^FS^XZ"), "job-1", _sender);
+
+        Assert.Null(_history.GetLabelImage("3931"));
+    }
+
+    [Fact]
+    public async Task Reprint_SendsStoredLabelAndRecordsSupervisor()
+    {
+        var guard = Guard();
+        await guard.ProcessAsync(Job(Zpl("3931")), "job-1", _sender);
+
+        var result = await guard.ReprintAsync("3931", "supervisor", _sender);
+
+        Assert.Equal(ReprintStatus.Printed, result.Status);
+        Assert.Equal(new[] { Zpl("3931"), Zpl("3931") }, _sender.Sent);
+        var prints = _history.GetPrints("3931");
+        Assert.Equal(2, prints.Count);
+        Assert.Equal("supervisor", prints[1].AuthorizedBy);
+        Assert.Equal(EventType.ReprintAuthorized, _history.GetRecentEvents(1)[0].Type);
+    }
+
+    [Fact]
+    public async Task Reprint_UnknownPallet_SendsNothing()
+    {
+        var result = await Guard().ReprintAsync("9999", "supervisor", _sender);
+
+        Assert.Equal(ReprintStatus.NotFound, result.Status);
+        Assert.Empty(_sender.Sent);
+        Assert.Empty(_history.GetPrints("9999"));
+    }
+
+    [Fact]
+    public async Task Reprint_SendFailure_RecordsNothing()
+    {
+        var guard = Guard();
+        await guard.ProcessAsync(Job(Zpl("3931")), "job-1", _sender);
+        _sender.FailOnCall = 2;
+
+        var result = await guard.ReprintAsync("3931", "supervisor", _sender);
+
+        Assert.Equal(ReprintStatus.Failed, result.Status);
+        Assert.Equal("impressora offline", result.Error);
+        Assert.Single(_history.GetPrints("3931"));
+    }
+
+    [Fact]
+    public async Task Authorize_StoresLabelForReprint()
+    {
+        var guard = Guard();
+        var blocked = Assert.Single((await guard.ProcessAsync(Job(Zpl("3931", "^PQ2")), "job-1", _sender)).Blocked);
+
+        await guard.AuthorizeAsync(blocked, "supervisor", _sender);
+
+        Assert.NotNull(_history.GetLabelImage("3931"));
+    }
+
     private sealed class FakeSender : ILabelSender
     {
         private int _calls;

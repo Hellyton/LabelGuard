@@ -50,6 +50,9 @@ public sealed class LabelGuardConfig
     /// <summary>Arquivo do histórico; vazio = historico.db na pasta da configuração.</summary>
     public string? DatabasePath { get; set; }
 
+    /// <summary>Por quantos dias guardar cada etiqueta impressa para "Reimprimir pallet" (mínimo 1).</summary>
+    public int KeepLabelImagesDays { get; set; } = 30;
+
     /// <summary>Pasta onde gravar cada trabalho recebido, para diagnóstico; vazio = não grava.</summary>
     public string? SaveJobsTo { get; set; }
 

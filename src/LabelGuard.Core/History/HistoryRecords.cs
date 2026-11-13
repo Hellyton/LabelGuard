@@ -3,6 +3,9 @@ namespace LabelGuard.Core.History;
 /// <summary>Uma impressão registrada. <paramref name="AuthorizedBy"/> é null na primeira impressão do ID.</summary>
 public sealed record PrintRecord(string LabelId, DateTimeOffset PrintedAt, string? AuthorizedBy, string? Job);
 
+/// <summary>Bytes de uma etiqueta já enviada, guardados para reimpressão.</summary>
+public sealed record StoredLabel(string LabelId, DateTimeOffset SavedAt, string? Job, byte[] Data);
+
 /// <summary>Tipo de evento do log.</summary>
 public enum EventType
 {

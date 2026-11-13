@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using Microsoft.Data.Sqlite;
 
 namespace LabelGuard.Core.History;
@@ -10,7 +11,8 @@ namespace LabelGuard.Core.History;
 /// </summary>
 public sealed class LabelHistory : IDisposable
 {
-    private const int SchemaVersion = 1;
+    // 1: prints e events. 2: label_images (etiquetas guardadas para reimpressão).
+    private const int SchemaVersion = 2;
 
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
@@ -35,7 +37,24 @@ public sealed class LabelHistory : IDisposable
         if (version >= SchemaVersion)
             return;
 
-        Execute($"""
+        if (version < 1)
+            CreateSchemaV1();
+        if (version < 2)
+            Execute("""
+                CREATE TABLE IF NOT EXISTS label_images (
+                    label_id TEXT PRIMARY KEY,
+                    saved_at TEXT NOT NULL,
+                    job      TEXT NULL,
+                    data     BLOB NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_label_images_saved ON label_images(saved_at);
+                """);
+        Execute($"PRAGMA user_version = {SchemaVersion};");
+    }
+
+    private void CreateSchemaV1()
+    {
+        Execute("""
             CREATE TABLE IF NOT EXISTS prints (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 label_id      TEXT NOT NULL,
@@ -55,8 +74,6 @@ public sealed class LabelHistory : IDisposable
                 job      TEXT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_events_label ON events(label_id);
-
-            PRAGMA user_version = {SchemaVersion};
             """);
     }
 
@@ -158,7 +175,72 @@ public sealed class LabelHistory : IDisposable
         }
     }
 
+    /// <summary>
+    /// Guarda os bytes da etiqueta enviada (comprimidos), para reimprimir sem o Papersystem.
+    /// Fica só a última versão de cada ID.
+    /// </summary>
+    public void SaveLabelImage(string labelId, string? job, ReadOnlySpan<byte> data)
+    {
+        var compressed = Compress(data);
+        lock (_lock)
+        {
+            using var command = Command(
+                """
+                INSERT INTO label_images (label_id, saved_at, job, data) VALUES ($id, $at, $job, $data)
+                ON CONFLICT(label_id) DO UPDATE SET saved_at = excluded.saved_at, job = excluded.job, data = excluded.data
+                """,
+                ("$id", labelId), ("$at", Now()), ("$job", job), ("$data", compressed));
+            command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>A etiqueta guardada do ID, ou null se não houver (nunca impressa ou já apagada pela retenção).</summary>
+    public StoredLabel? GetLabelImage(string labelId)
+    {
+        lock (_lock)
+        {
+            using var command = Command(
+                "SELECT label_id, saved_at, job, data FROM label_images WHERE label_id = $id", ("$id", labelId));
+            using var reader = command.ExecuteReader();
+            if (!reader.Read())
+                return null;
+            return new StoredLabel(
+                reader.GetString(0),
+                ParseTime(reader.GetString(1)),
+                NullableString(reader, 2),
+                Decompress(reader.GetFieldValue<byte[]>(3)));
+        }
+    }
+
+    /// <summary>Apaga etiquetas guardadas há mais tempo que <paramref name="age"/>. O histórico de impressões não muda.</summary>
+    public int DeleteLabelImagesOlderThan(TimeSpan age)
+    {
+        var cutoff = (_clock.GetUtcNow() - age).ToString("O", CultureInfo.InvariantCulture);
+        lock (_lock)
+        {
+            using var command = Command("DELETE FROM label_images WHERE saved_at < $cutoff", ("$cutoff", cutoff));
+            return command.ExecuteNonQuery();
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
+
+    // A imagem é quase toda branca: comprime para poucos KB.
+    private static byte[] Compress(ReadOnlySpan<byte> data)
+    {
+        using var output = new MemoryStream();
+        using (var zlib = new ZLibStream(output, CompressionLevel.Optimal))
+            zlib.Write(data);
+        return output.ToArray();
+    }
+
+    private static byte[] Decompress(byte[] data)
+    {
+        using var input = new ZLibStream(new MemoryStream(data), CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        input.CopyTo(output);
+        return output.ToArray();
+    }
 
     private string Now() => _clock.GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
 

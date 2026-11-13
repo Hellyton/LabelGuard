@@ -47,6 +47,10 @@ public sealed class GuardHost : IAsyncDisposable
     public Task<LabelOutcome> AuthorizeAsync(LabelOutcome blocked, string supervisor, CancellationToken cancellationToken = default) =>
         _guard.AuthorizeAsync(blocked, supervisor, _sender, cancellationToken);
 
+    /// <summary>Reimprime pelo número a etiqueta guardada, com autorização do supervisor.</summary>
+    public Task<ReprintResult> ReprintAsync(string labelId, string supervisor, CancellationToken cancellationToken = default) =>
+        _guard.ReprintAsync(labelId, supervisor, _sender, cancellationToken);
+
     public async Task StopAsync()
     {
         _cts.Cancel();

@@ -21,6 +21,7 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly AlertForm _alert;
     private readonly System.Windows.Forms.Timer _queueCheck = new() { Interval = 30_000 };
+    private readonly System.Windows.Forms.Timer _cleanup = new() { Interval = 6 * 60 * 60 * 1000 };
     private EventsForm? _events;
     private int _printed;
     private int _blocked;
@@ -40,6 +41,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem($"Protegendo: fila → '{config.OutputPrinter}'") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Etiquetas bloqueadas...", null, (_, _) => _alert.ShowAlert());
+        menu.Items.Add("Reimprimir pallet...", null, async (_, _) => await ReprintAsync());
         menu.Items.Add("Eventos...", null, (_, _) => ShowEvents());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Alterar senha do supervisor...", null, (_, _) => ChangePassword());
@@ -62,6 +64,7 @@ internal sealed class TrayContext : ApplicationContext
         };
 
         _queueCheck.Tick += (_, _) => CheckInputQueue();
+        _cleanup.Tick += (_, _) => CleanupStoredLabels();
     }
 
     public void ShowStarted()
@@ -69,6 +72,8 @@ internal sealed class TrayContext : ApplicationContext
         ShowBalloon($"Protegendo as etiquetas. Liberadas vão para '{_config.OutputPrinter}'.", ToolTipIcon.Info);
         CheckInputQueue();
         _queueCheck.Start();
+        CleanupStoredLabels();
+        _cleanup.Start();
     }
 
     /// <summary>
@@ -132,10 +137,67 @@ internal sealed class TrayContext : ApplicationContext
         var failed = result.Labels.FirstOrDefault(l => l.Status == LabelStatus.Failed);
         if (failed is not null)
         {
-            AppLog.Write($"Falha ao enviar ({result.Job}): {failed.Error}");
-            ShowBalloon(
-                $"Falha ao enviar para a impressora: {failed.Error}\nAs etiquetas que não saíram não foram registradas; imprima de novo.",
-                ToolTipIcon.Error);
+            var printed = result.Labels.Count(l => l.Status == LabelStatus.Printed);
+            var missing = result.Labels.Count(l => l.Status is LabelStatus.Failed or LabelStatus.NotSent);
+            AppLog.Write($"Falha ao enviar ({result.Job}): {failed.Error}; {missing} etiqueta(s) não saíram");
+            SystemSounds.Hand.Play();
+            Dialogs.Urgent(
+                $"FALHA AO ENVIAR PARA A IMPRESSORA\n\n{failed.Error}\n\n" +
+                $"Saíram {printed} etiqueta(s). NÃO saíram {missing}, a partir da #{failed.Index}" +
+                (failed.Id is null ? "." : $" (pallet {failed.Id}).") +
+                "\n\nConfira a impressora e mande o lote de novo pelo Papersystem: as que já saíram serão barradas e só as que faltam vão sair.");
+        }
+    }
+
+    /// <summary>Reimprime pelo número do pallet a etiqueta guardada, sem passar pelo Papersystem.</summary>
+    private async Task ReprintAsync()
+    {
+        var id = PasswordPrompt.AskText(null, "Reimprimir pallet", "Número do pallet:");
+        if (id is null)
+            return;
+
+        var prints = _history.GetPrints(id);
+        if (_history.GetLabelImage(id) is null)
+        {
+            Dialogs.Error(prints.Count == 0
+                ? $"O pallet {id} ainda não foi impresso pelo LabelGuard."
+                : $"A etiqueta do pallet {id} não está mais guardada (ficam {_config.KeepLabelImagesDays} dias).\n\nReimprima pelo Papersystem: ela será barrada e o supervisor libera no alerta.");
+            return;
+        }
+
+        var first = prints.Count > 0 ? OutcomeText.FormatTime(prints[0].PrintedAt) : "?";
+        var password = PasswordPrompt.Ask(
+            null,
+            "Reimprimir pallet",
+            $"Pallet {id}\nPrimeira impressão: {first}\nVezes impresso: {prints.Count}\n\nSenha do supervisor:");
+        if (password is null)
+            return;
+        if (!CheckPassword(password))
+        {
+            Dialogs.Error("Senha incorreta.");
+            return;
+        }
+
+        var result = await _host.ReprintAsync(id, Supervisor);
+        _events?.Reload();
+        if (result.Status == ReprintStatus.Printed)
+            ShowBalloon($"Pallet {id} reimpresso.", ToolTipIcon.Info);
+        else
+            Dialogs.Error($"Não foi possível reimprimir o pallet {id}: {result.Error ?? "etiqueta não encontrada"}");
+    }
+
+    private void CleanupStoredLabels()
+    {
+        var days = Math.Max(1, _config.KeepLabelImagesDays);
+        try
+        {
+            var deleted = _history.DeleteLabelImagesOlderThan(TimeSpan.FromDays(days));
+            if (deleted > 0)
+                AppLog.Write($"{deleted} etiqueta(s) guardada(s) há mais de {days} dias apagada(s)");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Falha ao apagar etiquetas guardadas antigas: {ex.Message}");
         }
     }
 
@@ -210,6 +272,7 @@ internal sealed class TrayContext : ApplicationContext
         if (disposing)
         {
             _queueCheck.Dispose();
+            _cleanup.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _alert.Dispose();
