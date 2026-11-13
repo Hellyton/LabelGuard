@@ -1,4 +1,5 @@
 using System.Globalization;
+using LabelGuard.Core.History;
 
 namespace LabelGuard.Core.Guard;
 
@@ -15,6 +16,16 @@ public static class OutcomeText
         LabelStatus.NoId => "BLOQUEADA: ID não encontrado",
         LabelStatus.Failed => $"FALHA: {outcome.Error}",
         _ => "não enviada",
+    };
+
+    public static string Describe(this EventType type) => type switch
+    {
+        EventType.Printed => "Impressa",
+        EventType.Blocked => "Bloqueada",
+        EventType.ReprintAuthorized => "Liberada",
+        EventType.NoId => "Sem ID",
+        EventType.Error => "Erro",
+        _ => type.ToString(),
     };
 
     public static string FormatTime(DateTimeOffset time) =>

@@ -69,7 +69,7 @@ powershell -ExecutionPolicy Bypass -File tools\desligar-reimpressao.ps1 -Impress
 - [x] **3. Histórico** – banco SQLite com etiquetas impressas e log de eventos
 - [x] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
 - [x] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio RAW para a impressora USB pelo spooler
-- [ ] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, envio para impressora USB
+- [x] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, arquivo de configuração
 - [ ] **7. Instalação** – script PowerShell que cria a impressora protegida, guia de configuração
 
 ## Estrutura
@@ -78,7 +78,8 @@ powershell -ExecutionPolicy Bypass -File tools\desligar-reimpressao.ps1 -Impress
 src/LabelGuard.Core     lógica independente de sistema operacional (testável)
 tests/LabelGuard.Tests  testes automatizados (xUnit)
 src/LabelGuard.Windows  envio RAW para filas do Windows (winspool)
-src/LabelGuard.Server   executável de console: receptor + motor + envio
+src/LabelGuard.App      aplicativo na bandeja (uso normal)
+src/LabelGuard.Server   executável de console: receptor + motor + envio (diagnóstico)
 tools/LabelGuard.Inspect  analisa trabalhos capturados em arquivo (.prn)
 ```
 
@@ -113,6 +114,32 @@ Reimpressões liberadas entram com o nome do supervisor.
 O ID é reservado no histórico antes do envio e liberado se o envio falhar: uma
 etiqueta que não saiu não fica marcada como impressa. Etiquetas bloqueadas podem
 ser liberadas com `AuthorizeAsync`, que registra o supervisor.
+
+## Aplicativo (bandeja)
+
+```bash
+dotnet run --project src/LabelGuard.App [-- --config <arquivo>]
+```
+
+- Configuração em `C:\ProgramData\LabelGuard\config.json` (criada no primeiro uso):
+
+  | Chave                  | Padrão                    | O que é                                          |
+  |------------------------|---------------------------|--------------------------------------------------|
+  | `outputPrinter`        | `LabelGuard - NAO USAR`   | fila ligada à impressora (recebe as liberadas)   |
+  | `port`                 | `9100`                    | porta local da fila protegida                    |
+  | `idPattern`            | `[?&]pallet=(?<id>\d+)`   | expressão regular do ID                          |
+  | `printWithoutId`       | `false`                   | imprimir etiquetas sem ID em vez de bloquear     |
+  | `allowMultipleCopies`  | `false`                   | aceitar etiquetas com mais de 1 cópia            |
+  | `printerReprintOff`    | `true`                    | enviar `SET REPRINT OFF` antes de cada etiqueta  |
+  | `databasePath`         | `historico.db` na pasta   | histórico                                        |
+  | `saveJobsTo`           | vazio                     | pasta para gravar os trabalhos recebidos         |
+  | `supervisorPasswordHash` | definido no 1º uso      | hash PBKDF2 da senha única do supervisor         |
+
+- No primeiro uso pede a senha do supervisor (guardada só como hash).
+- Ícone perto do relógio, com menu: etiquetas bloqueadas, eventos, alterar senha, sair.
+- Quando bloqueia, abre a janela de alerta (som + lista). O supervisor marca as etiquetas e
+  libera com a senha; a reimpressão fica registrada no histórico.
+- Fechar o LabelGuard pede a senha: com ele fechado, a fila `LABEL` para de imprimir.
 
 ## Testar com a impressora
 
