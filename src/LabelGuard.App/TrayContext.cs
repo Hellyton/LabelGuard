@@ -3,6 +3,7 @@ using LabelGuard.Core.Config;
 using LabelGuard.Core.Guard;
 using LabelGuard.Core.History;
 using LabelGuard.Core.Hosting;
+using LabelGuard.Windows;
 
 namespace LabelGuard.App;
 
@@ -19,9 +20,12 @@ internal sealed class TrayContext : ApplicationContext
     private readonly SynchronizationContext _ui;
     private readonly NotifyIcon _tray;
     private readonly AlertForm _alert;
+    private readonly System.Windows.Forms.Timer _queueCheck = new() { Interval = 30_000 };
     private EventsForm? _events;
     private int _printed;
     private int _blocked;
+    private DateTime _lastOfflineWarning = DateTime.MinValue;
+    private bool _queueCheckFailed;
 
     public TrayContext(LabelGuardConfig config, string configPath, LabelHistory history, GuardHost host)
     {
@@ -56,10 +60,59 @@ internal sealed class TrayContext : ApplicationContext
             AppLog.Write(message);
             _ui.Post(_ => ShowBalloon(message, ToolTipIcon.Warning), null);
         };
+
+        _queueCheck.Tick += (_, _) => CheckInputQueue();
     }
 
-    public void ShowStarted() =>
+    public void ShowStarted()
+    {
         ShowBalloon($"Protegendo as etiquetas. Liberadas vão para '{_config.OutputPrinter}'.", ToolTipIcon.Info);
+        CheckInputQueue();
+        _queueCheck.Start();
+    }
+
+    /// <summary>
+    /// Se o Windows marcou a fila do Papersystem como "offline" (acontece quando o LabelGuard esteve fechado),
+    /// ela não entrega mais nada. Tenta desmarcar; sem permissão de administrador, avisa a cada 5 minutos.
+    /// </summary>
+    private void CheckInputQueue()
+    {
+        var queue = _config.InputPrinter;
+        bool offline;
+        try
+        {
+            offline = PrinterQueue.IsWorkOffline(queue);
+        }
+        catch (Exception ex)
+        {
+            if (!_queueCheckFailed)
+                AppLog.Write($"Não foi possível verificar a fila '{queue}': {ex.Message}");
+            _queueCheckFailed = true;
+            return;
+        }
+
+        _queueCheckFailed = false;
+        if (!offline)
+            return;
+
+        try
+        {
+            PrinterQueue.SetOnline(queue);
+            AppLog.Write($"Fila '{queue}' estava offline; colocada online");
+            ShowBalloon($"A fila '{queue}' estava offline e foi reativada.", ToolTipIcon.Info);
+        }
+        catch (Exception ex)
+        {
+            if (DateTime.Now - _lastOfflineWarning < TimeSpan.FromMinutes(5))
+                return;
+            _lastOfflineWarning = DateTime.Now;
+            AppLog.Write($"Fila '{queue}' offline e sem permissão para reativar: {ex.Message}");
+            SystemSounds.Hand.Play();
+            ShowBalloon(
+                $"A fila '{queue}' está OFFLINE e as etiquetas não saem.\nConfigurações > Impressoras > {queue} > Abrir fila > menu Impressora > desmarcar 'Usar Impressora Offline'.",
+                ToolTipIcon.Error);
+        }
+    }
 
     private void OnJob(JobResult result)
     {
@@ -156,6 +209,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         if (disposing)
         {
+            _queueCheck.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _alert.Dispose();

@@ -485,3 +485,6 @@ $RECYCLE.BIN/
 
 # Instrucoes locais do Claude
 CLAUDE.md
+
+# Pacote de instalação gerado por tools/publicar.ps1
+dist/
