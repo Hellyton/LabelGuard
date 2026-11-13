@@ -10,7 +10,8 @@ namespace LabelGuard.Core.History;
 /// </summary>
 public sealed class LabelHistory : IDisposable
 {
-    private const int SchemaVersion = 1;
+    // 1: prints e events. 2: label_images (descartada). 3: reprint_permits, sem label_images.
+    private const int SchemaVersion = 3;
 
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
@@ -35,7 +36,25 @@ public sealed class LabelHistory : IDisposable
         if (version >= SchemaVersion)
             return;
 
-        Execute($"""
+        if (version < 1)
+            CreateSchemaV1();
+        if (version < 3)
+            // A versão 2 guardava as etiquetas (label_images); essa ideia foi trocada pela liberação prévia.
+            Execute("""
+                DROP TABLE IF EXISTS label_images;
+                CREATE TABLE IF NOT EXISTS reprint_permits (
+                    label_id   TEXT PRIMARY KEY,
+                    granted_at TEXT NOT NULL,
+                    granted_by TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+                """);
+        Execute($"PRAGMA user_version = {SchemaVersion};");
+    }
+
+    private void CreateSchemaV1()
+    {
+        Execute("""
             CREATE TABLE IF NOT EXISTS prints (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 label_id      TEXT NOT NULL,
@@ -55,8 +74,6 @@ public sealed class LabelHistory : IDisposable
                 job      TEXT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_events_label ON events(label_id);
-
-            PRAGMA user_version = {SchemaVersion};
             """);
     }
 
@@ -158,9 +175,62 @@ public sealed class LabelHistory : IDisposable
         }
     }
 
+    /// <summary>
+    /// Libera uma reimpressão do ID até <paramref name="expiresAt"/>: a próxima impressão dele passa uma vez.
+    /// Uma liberação nova substitui a anterior do mesmo ID.
+    /// </summary>
+    public ReprintPermit GrantReprint(string labelId, string supervisor, TimeSpan validFor)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(supervisor);
+        var now = _clock.GetUtcNow();
+        var permit = new ReprintPermit(labelId, now, supervisor, now + validFor);
+        lock (_lock)
+        {
+            using var command = Command(
+                """
+                INSERT INTO reprint_permits (label_id, granted_at, granted_by, expires_at) VALUES ($id, $at, $by, $until)
+                ON CONFLICT(label_id) DO UPDATE SET
+                    granted_at = excluded.granted_at, granted_by = excluded.granted_by, expires_at = excluded.expires_at
+                """,
+                ("$id", labelId), ("$at", Format(permit.GrantedAt)), ("$by", supervisor), ("$until", Format(permit.ExpiresAt)));
+            command.ExecuteNonQuery();
+        }
+        return permit;
+    }
+
+    /// <summary>A liberação ainda válida do ID, ou null.</summary>
+    public ReprintPermit? GetReprintPermit(string labelId)
+    {
+        lock (_lock)
+        {
+            using var command = Command(
+                "SELECT label_id, granted_at, granted_by, expires_at FROM reprint_permits WHERE label_id = $id AND expires_at > $now",
+                ("$id", labelId), ("$now", Now()));
+            using var reader = command.ExecuteReader();
+            if (!reader.Read())
+                return null;
+            return new ReprintPermit(
+                reader.GetString(0), ParseTime(reader.GetString(1)), reader.GetString(2), ParseTime(reader.GetString(3)));
+        }
+    }
+
+    /// <summary>Usa (apaga) a liberação do ID depois que a reimpressão saiu. Também limpa as vencidas.</summary>
+    public void ConsumeReprintPermit(string labelId)
+    {
+        lock (_lock)
+        {
+            using var command = Command(
+                "DELETE FROM reprint_permits WHERE label_id = $id OR expires_at <= $now", ("$id", labelId), ("$now", Now()));
+            command.ExecuteNonQuery();
+        }
+    }
+
     public void Dispose() => _connection.Dispose();
 
-    private string Now() => _clock.GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
+    private string Now() => Format(_clock.GetUtcNow());
+
+    // UTC com o mesmo formato sempre: a comparação de texto no SQL vale como comparação de data.
+    private static string Format(DateTimeOffset time) => time.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
     private static DateTimeOffset ParseTime(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);

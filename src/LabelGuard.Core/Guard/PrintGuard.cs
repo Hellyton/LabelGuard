@@ -56,7 +56,7 @@ public sealed class PrintGuard
             throw new InvalidOperationException("A etiqueta não está bloqueada.");
         ArgumentException.ThrowIfNullOrWhiteSpace(supervisor);
 
-        var error = await TrySendAsync(blocked.Label, sender, cancellationToken);
+        var error = await TrySendAsync(blocked.Label.RawData, sender, cancellationToken);
         if (error is not null)
         {
             _history.Log(EventType.Error, $"Falha ao enviar {Name(blocked.Id, blocked.Index)}: {error}", blocked.Id, blocked.Job);
@@ -71,6 +71,20 @@ public sealed class PrintGuard
             blocked.Id,
             blocked.Job);
         return blocked with { Status = LabelStatus.Printed, Error = null };
+    }
+
+    /// <summary>
+    /// Liberação prévia: a próxima impressão do ID passa uma vez, dentro de <paramref name="validFor"/>.
+    /// O operador reimprime pelo Papersystem; nada da etiqueta é guardado pelo LabelGuard.
+    /// </summary>
+    public ReprintPermit GrantReprint(string labelId, string supervisor, TimeSpan validFor)
+    {
+        var permit = _history.GrantReprint(labelId, supervisor, validFor);
+        _history.Log(
+            EventType.ReprintAuthorized,
+            $"Etiqueta {labelId} liberada para reimpressão por {supervisor} até {permit.ExpiresAt.ToLocalTime():HH:mm}",
+            labelId);
+        return permit;
     }
 
     private async Task<LabelOutcome> ProcessLabelAsync(
@@ -90,7 +104,12 @@ public sealed class PrintGuard
         }
 
         if (_history.WasPrinted(id))
-            return Duplicate(job, index, label, id);
+        {
+            var permit = label.Copies <= 1 || _options.AllowMultipleCopies ? _history.GetReprintPermit(id) : null;
+            return permit is null
+                ? Duplicate(job, index, label, id)
+                : await ReprintWithPermitAsync(job, index, label, id, permit, sender, cancellationToken);
+        }
 
         if (label.Copies > 1 && !_options.AllowMultipleCopies)
         {
@@ -113,6 +132,23 @@ public sealed class PrintGuard
         }
     }
 
+    private async Task<LabelOutcome> ReprintWithPermitAsync(
+        string job, int index, Label label, string id, ReprintPermit permit, ILabelSender sender, CancellationToken cancellationToken)
+    {
+        var error = await TrySendAsync(label.RawData, sender, cancellationToken);
+        if (error is not null)
+        {
+            // A liberação continua valendo para a próxima tentativa.
+            _history.Log(EventType.Error, $"Falha ao reimprimir etiqueta {id}: {error}", id, job);
+            return new LabelOutcome(job, index, label, id, LabelStatus.Failed, Array.Empty<PrintRecord>(), error);
+        }
+
+        _history.ConsumeReprintPermit(id);
+        _history.RecordAuthorizedReprint(id, permit.GrantedBy, job);
+        _history.Log(EventType.ReprintAuthorized, $"Etiqueta {id} reimpressa (liberada antes por {permit.GrantedBy})", id, job);
+        return new LabelOutcome(job, index, label, id, LabelStatus.Printed, Array.Empty<PrintRecord>());
+    }
+
     private LabelOutcome Duplicate(string job, int index, Label label, string id)
     {
         var previous = _history.GetPrints(id);
@@ -126,7 +162,7 @@ public sealed class PrintGuard
     private async Task<LabelOutcome> SendAsync(
         string job, int index, Label label, string? id, ILabelSender sender, CancellationToken cancellationToken)
     {
-        var error = await TrySendAsync(label, sender, cancellationToken);
+        var error = await TrySendAsync(label.RawData, sender, cancellationToken);
         if (error is null)
         {
             _history.Log(EventType.Printed, $"{Name(id, index)} impressa", id, job);
@@ -140,11 +176,11 @@ public sealed class PrintGuard
     }
 
     /// <summary>Retorna null se enviou, ou a mensagem de erro.</summary>
-    private static async Task<string?> TrySendAsync(Label label, ILabelSender sender, CancellationToken cancellationToken)
+    private static async Task<string?> TrySendAsync(ReadOnlyMemory<byte> data, ILabelSender sender, CancellationToken cancellationToken)
     {
         try
         {
-            await sender.SendAsync(label.RawData, cancellationToken);
+            await sender.SendAsync(data, cancellationToken);
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

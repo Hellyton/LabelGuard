@@ -124,10 +124,12 @@ ser liberadas com `AuthorizeAsync`, que registra o supervisor.
    ```
 
    Cria `dist\LabelGuard` e `dist\LabelGuard.zip`: `LabelGuard.App.exe` autocontido (não precisa
-   de .NET na máquina), `instalar.ps1`, `desinstalar.ps1`, `desligar-reimpressao.ps1` e `LEIA-ME.txt`.
+   de .NET na máquina), `INSTALAR.cmd`, `DESINSTALAR.cmd`, `instalar.ps1`, `desinstalar.ps1`,
+   `desligar-reimpressao.ps1` e `LEIA-ME.txt`.
 
 2. Na máquina da produção, com a impressora já imprimindo pelo Papersystem na fila `LABEL`,
-   abrir o PowerShell como administrador na pasta do pacote:
+   dar duplo clique em `INSTALAR.cmd` (pede a permissão de administrador e roda `instalar.ps1`).
+   Para opções, abrir o PowerShell como administrador na pasta do pacote:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular   # mostra o que faria
@@ -170,13 +172,22 @@ terminal: com `dotnet run`, fechar o terminal fecha o LabelGuard junto e a fila 
   | `allowMultipleCopies`  | `false`                   | aceitar etiquetas com mais de 1 cópia            |
   | `printerReprintOff`    | `true`                    | enviar `SET REPRINT OFF` antes de cada etiqueta  |
   | `databasePath`         | `historico.db` na pasta   | histórico                                        |
+  | `reprintPermitMinutes` | `60`                      | validade de "Liberar pallet para reimpressão"    |
   | `saveJobsTo`           | vazio                     | pasta para gravar os trabalhos recebidos         |
   | `supervisorPasswordHash` | definido no 1º uso      | hash PBKDF2 da senha única do supervisor         |
 
 - No primeiro uso pede a senha do supervisor (guardada só como hash).
-- Ícone perto do relógio, com menu: etiquetas bloqueadas, eventos, alterar senha, sair.
+- Ícone perto do relógio, com menu: etiquetas bloqueadas, liberar pallet para reimpressão,
+  eventos, alterar senha, sair.
 - Quando bloqueia, abre a janela de alerta (som + lista). O supervisor marca as etiquetas e
   libera com a senha; a reimpressão fica registrada no histórico.
+- **Liberar pallet para reimpressão...**: o supervisor digita o número e a senha; a próxima
+  impressão desse pallet pelo Papersystem passa uma vez, dentro de `reprintPermitMinutes`
+  minutos. Serve para a etiqueta perdida quando a bobina acaba no meio dela (com
+  `SET REPRINT OFF` a impressora não repete). O LabelGuard não guarda as etiquetas: só a
+  liberação pendente (tabela `reprint_permits`).
+- Falha ao enviar para a impressora abre um erro por cima de todas as janelas, dizendo quantas
+  etiquetas não saíram e a partir de qual; basta mandar o lote de novo.
 - Fechar o LabelGuard pede a senha: com ele fechado, a fila `LABEL` para de imprimir.
 
 ## Testar com a impressora

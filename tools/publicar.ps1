@@ -6,6 +6,10 @@ $raiz = Split-Path $PSScriptRoot -Parent
 $saida = Join-Path $raiz "dist\LabelGuard"
 $zip = Join-Path $raiz "dist\LabelGuard.zip"
 
+$aberto = Get-Process -Name "LabelGuard.App" -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$saida\*" }
+if ($aberto) {
+    throw "O LabelGuard está aberto a partir de $saida. Feche-o (escudo > Sair) e rode de novo."
+}
 if (Test-Path $saida) { Remove-Item $saida -Recurse -Force }
 
 dotnet publish (Join-Path $raiz "src\LabelGuard.App") -c Release -r win-x64 --self-contained true `

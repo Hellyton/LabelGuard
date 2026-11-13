@@ -3,6 +3,9 @@ namespace LabelGuard.Core.History;
 /// <summary>Uma impressão registrada. <paramref name="AuthorizedBy"/> é null na primeira impressão do ID.</summary>
 public sealed record PrintRecord(string LabelId, DateTimeOffset PrintedAt, string? AuthorizedBy, string? Job);
 
+/// <summary>Liberação prévia do supervisor: a próxima impressão do ID passa uma vez, até <paramref name="ExpiresAt"/>.</summary>
+public sealed record ReprintPermit(string LabelId, DateTimeOffset GrantedAt, string GrantedBy, DateTimeOffset ExpiresAt);
+
 /// <summary>Tipo de evento do log.</summary>
 public enum EventType
 {

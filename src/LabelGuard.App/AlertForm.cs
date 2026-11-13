@@ -46,8 +46,9 @@ internal sealed class AlertForm : Form
             Font = new Font(Font.FontFamily, 10),
         };
         _list.Columns.Add("Pallet", 90);
-        _list.Columns.Add("Motivo", 440);
-        _list.Columns.Add("Trabalho", 170);
+        _list.Columns.Add("Motivo", 400);
+        _list.Columns.Add("Tentativas", 80);
+        _list.Columns.Add("Trabalho", 150);
 
         _buttons = new FlowLayoutPanel
         {
@@ -71,8 +72,21 @@ internal sealed class AlertForm : Form
         _list.BeginUpdate();
         foreach (var outcome in blocked)
         {
+            // Uma linha por pallet: tentar imprimir de novo só conta mais uma tentativa. Sem isso,
+            // liberar todas as linhas mandaria uma cópia por tentativa.
+            var existing = outcome.Id is null ? null : PalletRows(outcome.Id).FirstOrDefault();
+            if (existing is not null)
+            {
+                existing.Tag = outcome;
+                existing.SubItems[1].Text = outcome.Describe();
+                existing.SubItems[2].Text = (int.Parse(existing.SubItems[2].Text) + 1).ToString();
+                existing.SubItems[3].Text = outcome.Job;
+                continue;
+            }
+
             var item = new ListViewItem(outcome.Id ?? $"#{outcome.Index}") { Tag = outcome };
             item.SubItems.Add(outcome.Describe());
+            item.SubItems.Add("1");
             item.SubItems.Add(outcome.Job);
             _list.Items.Add(item);
         }
@@ -123,10 +137,18 @@ internal sealed class AlertForm : Form
         {
             foreach (var item in items)
             {
-                var result = await _authorize((LabelOutcome)item.Tag!);
+                // Já saiu junto com outra linha do mesmo pallet.
+                if (item.ListView is null)
+                    continue;
+
+                var outcome = (LabelOutcome)item.Tag!;
+                var result = await _authorize(outcome);
                 if (result.Status == LabelStatus.Printed)
                 {
-                    _list.Items.Remove(item);
+                    // No máximo uma etiqueta por pallet: tira todas as linhas dele.
+                    var rows = outcome.Id is null ? new[] { item } : PalletRows(outcome.Id).ToArray();
+                    foreach (var row in rows)
+                        _list.Items.Remove(row);
                 }
                 else
                 {
@@ -143,6 +165,9 @@ internal sealed class AlertForm : Form
         if (_list.Items.Count == 0)
             Hide();
     }
+
+    private IEnumerable<ListViewItem> PalletRows(string id) =>
+        _list.Items.Cast<ListViewItem>().Where(i => ((LabelOutcome)i.Tag!).Id == id);
 
     private void Discard()
     {

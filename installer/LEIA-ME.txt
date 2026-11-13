@@ -6,14 +6,14 @@ Pré-requisito: a impressora de etiquetas já instalada e imprimindo pelo Papers
 
 INSTALAR
 1. Copie esta pasta para a máquina (ex.: C:\LabelGuard-instalacao).
-2. Abra o PowerShell como administrador nesta pasta.
-3. (Opcional) Veja o que será feito, sem alterar nada:
-     powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular
-4. Instale:
-     powershell -ExecutionPolicy Bypass -File instalar.ps1
-   Se a fila do Papersystem tiver outro nome:  -Fila "NOME DA FILA"
-5. O LabelGuard abre (ícone de escudo perto do relógio) e pede para criar a senha
+2. Dê duplo clique em INSTALAR.cmd e aceite a pergunta do Windows ("Deseja permitir...?").
+   No fim deve aparecer "LabelGuard instalado." em verde; aperte Enter para fechar.
+3. O LabelGuard abre (ícone de escudo perto do relógio) e pede para criar a senha
    do supervisor. Depois imprima uma etiqueta de teste pelo Papersystem.
+
+   Pelo PowerShell (como administrador, nesta pasta), para opções:
+     powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular   (só mostra o que faria)
+     powershell -ExecutionPolicy Bypass -File instalar.ps1 -Fila "NOME DA FILA"
 
 USO
 - O Papersystem continua imprimindo na fila "LABEL", como sempre.
@@ -24,7 +24,7 @@ USO
   fechado, as etiquetas ficam paradas na fila.
 
 DESINSTALAR (volta tudo como era antes)
-     powershell -ExecutionPolicy Bypass -File desinstalar.ps1
+   Duplo clique em DESINSTALAR.cmd (ou: powershell -ExecutionPolicy Bypass -File desinstalar.ps1)
    O histórico fica em C:\ProgramData\LabelGuard (use -RemoverDados para apagar).
 
 PROBLEMAS

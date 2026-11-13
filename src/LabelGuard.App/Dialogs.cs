@@ -11,15 +11,24 @@ internal static class Dialogs
 
     public static void Error(string text, IWin32Window? owner = null) =>
         MessageBox.Show(owner, text, "LabelGuard", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+    /// <summary>Erro por cima de todas as janelas, para não passar despercebido.</summary>
+    public static void Urgent(string text) =>
+        MessageBox.Show(text, "LabelGuard", MessageBoxButtons.OK, MessageBoxIcon.Error,
+            MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
+
+    public static bool Confirm(string text, IWin32Window? owner = null) =>
+        MessageBox.Show(owner, text, "LabelGuard", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
 }
 
-/// <summary>Pede uma senha.</summary>
+/// <summary>Pede uma senha (ou um texto, com <see cref="AskText"/>).</summary>
 internal sealed class PasswordPrompt : Form
 {
     private readonly TextBox _password = new() { UseSystemPasswordChar = true, Width = 300 };
 
-    private PasswordPrompt(string title, string message)
+    private PasswordPrompt(string title, string message, bool hidden = true)
     {
+        _password.UseSystemPasswordChar = hidden;
         Text = title;
         Icon = SystemIcons.Shield;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -50,6 +59,14 @@ internal sealed class PasswordPrompt : Form
     {
         using var form = new PasswordPrompt(title, message);
         return form.ShowDialog(owner) == DialogResult.OK ? form._password.Text : null;
+    }
+
+    /// <summary>Retorna o texto digitado (sem espaços nas pontas), ou null se cancelou ou deixou vazio.</summary>
+    public static string? AskText(IWin32Window? owner, string title, string message)
+    {
+        using var form = new PasswordPrompt(title, message, hidden: false);
+        var text = form.ShowDialog(owner) == DialogResult.OK ? form._password.Text.Trim() : "";
+        return text.Length > 0 ? text : null;
     }
 }
 

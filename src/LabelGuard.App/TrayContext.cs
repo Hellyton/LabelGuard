@@ -40,6 +40,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem($"Protegendo: fila → '{config.OutputPrinter}'") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Etiquetas bloqueadas...", null, (_, _) => _alert.ShowAlert());
+        menu.Items.Add("Liberar pallet para reimpressão...", null, (_, _) => GrantReprint());
         menu.Items.Add("Eventos...", null, (_, _) => ShowEvents());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Alterar senha do supervisor...", null, (_, _) => ChangePassword());
@@ -132,11 +133,52 @@ internal sealed class TrayContext : ApplicationContext
         var failed = result.Labels.FirstOrDefault(l => l.Status == LabelStatus.Failed);
         if (failed is not null)
         {
-            AppLog.Write($"Falha ao enviar ({result.Job}): {failed.Error}");
-            ShowBalloon(
-                $"Falha ao enviar para a impressora: {failed.Error}\nAs etiquetas que não saíram não foram registradas; imprima de novo.",
-                ToolTipIcon.Error);
+            var printed = result.Labels.Count(l => l.Status == LabelStatus.Printed);
+            var missing = result.Labels.Count(l => l.Status is LabelStatus.Failed or LabelStatus.NotSent);
+            AppLog.Write($"Falha ao enviar ({result.Job}): {failed.Error}; {missing} etiqueta(s) não saíram");
+            SystemSounds.Hand.Play();
+            Dialogs.Urgent(
+                $"FALHA AO ENVIAR PARA A IMPRESSORA\n\n{failed.Error}\n\n" +
+                $"Saíram {printed} etiqueta(s). NÃO saíram {missing}, a partir da #{failed.Index}" +
+                (failed.Id is null ? "." : $" (pallet {failed.Id}).") +
+                "\n\nConfira a impressora e mande o lote de novo pelo Papersystem: as que já saíram serão barradas e só as que faltam vão sair.");
         }
+    }
+
+    /// <summary>
+    /// Liberação prévia: o supervisor libera um pallet e a próxima impressão dele pelo Papersystem passa uma vez.
+    /// Serve para a etiqueta perdida no fim da bobina (com SET REPRINT OFF a impressora não repete).
+    /// </summary>
+    private void GrantReprint()
+    {
+        var id = PasswordPrompt.AskText(null, "Liberar pallet para reimpressão", "Número do pallet:");
+        if (id is null)
+            return;
+
+        var prints = _history.GetPrints(id);
+        if (prints.Count == 0)
+        {
+            Dialogs.Info($"O pallet {id} ainda não foi impresso pelo LabelGuard. Pode imprimir normalmente.");
+            return;
+        }
+
+        var minutes = Math.Max(1, _config.ReprintPermitMinutes);
+        var password = PasswordPrompt.Ask(
+            null,
+            "Liberar pallet para reimpressão",
+            $"Pallet {id}\nPrimeira impressão: {OutcomeText.FormatTime(prints[0].PrintedAt)}\nVezes impresso: {prints.Count}\n\n" +
+            $"A próxima impressão dele vai passar uma vez, nos próximos {minutes} minutos.\n\nSenha do supervisor:");
+        if (password is null)
+            return;
+        if (!CheckPassword(password))
+        {
+            Dialogs.Error("Senha incorreta.");
+            return;
+        }
+
+        var permit = _host.GrantReprint(id, Supervisor, TimeSpan.FromMinutes(minutes));
+        _events?.Reload();
+        Dialogs.Info($"Pallet {id} liberado até {permit.ExpiresAt.ToLocalTime():HH:mm}.\n\nReimprima a etiqueta pelo Papersystem. Vale para uma impressão.");
     }
 
     private bool CheckPassword(string password) => SupervisorPassword.Verify(password, _config.SupervisorPasswordHash);

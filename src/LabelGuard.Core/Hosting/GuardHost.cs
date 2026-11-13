@@ -1,5 +1,6 @@
 using System.Net;
 using LabelGuard.Core.Guard;
+using LabelGuard.Core.History;
 using LabelGuard.Core.Receiving;
 
 namespace LabelGuard.Core.Hosting;
@@ -46,6 +47,10 @@ public sealed class GuardHost : IAsyncDisposable
     /// <summary>Libera uma etiqueta bloqueada com autorização do supervisor e a envia pelo mesmo caminho.</summary>
     public Task<LabelOutcome> AuthorizeAsync(LabelOutcome blocked, string supervisor, CancellationToken cancellationToken = default) =>
         _guard.AuthorizeAsync(blocked, supervisor, _sender, cancellationToken);
+
+    /// <summary>Libera a próxima impressão do ID (uma vez, por <paramref name="validFor"/>).</summary>
+    public ReprintPermit GrantReprint(string labelId, string supervisor, TimeSpan validFor) =>
+        _guard.GrantReprint(labelId, supervisor, validFor);
 
     public async Task StopAsync()
     {
