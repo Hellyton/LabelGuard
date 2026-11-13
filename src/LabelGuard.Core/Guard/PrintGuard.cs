@@ -63,12 +63,8 @@ public sealed class PrintGuard
             return blocked with { Error = error };
         }
 
-        if (blocked.Id is not null)
-        {
-            if (!_history.TryRecordPrint(blocked.Id, blocked.Job))
-                _history.RecordAuthorizedReprint(blocked.Id, supervisor, blocked.Job);
-            SaveImage(blocked.Id, blocked.Job, blocked.Label);
-        }
+        if (blocked.Id is not null && !_history.TryRecordPrint(blocked.Id, blocked.Job))
+            _history.RecordAuthorizedReprint(blocked.Id, supervisor, blocked.Job);
         _history.Log(
             EventType.ReprintAuthorized,
             $"{Name(blocked.Id, blocked.Index)} liberada por {supervisor}",
@@ -78,27 +74,17 @@ public sealed class PrintGuard
     }
 
     /// <summary>
-    /// Reimprime pelo número, sem o Papersystem: envia a etiqueta guardada na última impressão do ID
-    /// e registra a reimpressão em nome do supervisor.
+    /// Liberação prévia: a próxima impressão do ID passa uma vez, dentro de <paramref name="validFor"/>.
+    /// O operador reimprime pelo Papersystem; nada da etiqueta é guardado pelo LabelGuard.
     /// </summary>
-    public async Task<ReprintResult> ReprintAsync(
-        string labelId, string supervisor, ILabelSender sender, CancellationToken cancellationToken = default)
+    public ReprintPermit GrantReprint(string labelId, string supervisor, TimeSpan validFor)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(supervisor);
-        var stored = _history.GetLabelImage(labelId);
-        if (stored is null)
-            return new ReprintResult(ReprintStatus.NotFound, null, null);
-
-        var error = await TrySendAsync(stored.Data, sender, cancellationToken);
-        if (error is not null)
-        {
-            _history.Log(EventType.Error, $"Falha ao reimprimir etiqueta {labelId}: {error}", labelId, stored.Job);
-            return new ReprintResult(ReprintStatus.Failed, stored, error);
-        }
-
-        _history.RecordAuthorizedReprint(labelId, supervisor, stored.Job);
-        _history.Log(EventType.ReprintAuthorized, $"Etiqueta {labelId} reimpressa pelo menu, liberada por {supervisor}", labelId, stored.Job);
-        return new ReprintResult(ReprintStatus.Printed, stored, null);
+        var permit = _history.GrantReprint(labelId, supervisor, validFor);
+        _history.Log(
+            EventType.ReprintAuthorized,
+            $"Etiqueta {labelId} liberada para reimpressão por {supervisor} até {permit.ExpiresAt.ToLocalTime():HH:mm}",
+            labelId);
+        return permit;
     }
 
     private async Task<LabelOutcome> ProcessLabelAsync(
@@ -118,7 +104,12 @@ public sealed class PrintGuard
         }
 
         if (_history.WasPrinted(id))
-            return Duplicate(job, index, label, id);
+        {
+            var permit = label.Copies <= 1 || _options.AllowMultipleCopies ? _history.GetReprintPermit(id) : null;
+            return permit is null
+                ? Duplicate(job, index, label, id)
+                : await ReprintWithPermitAsync(job, index, label, id, permit, sender, cancellationToken);
+        }
 
         if (label.Copies > 1 && !_options.AllowMultipleCopies)
         {
@@ -141,6 +132,23 @@ public sealed class PrintGuard
         }
     }
 
+    private async Task<LabelOutcome> ReprintWithPermitAsync(
+        string job, int index, Label label, string id, ReprintPermit permit, ILabelSender sender, CancellationToken cancellationToken)
+    {
+        var error = await TrySendAsync(label.RawData, sender, cancellationToken);
+        if (error is not null)
+        {
+            // A liberação continua valendo para a próxima tentativa.
+            _history.Log(EventType.Error, $"Falha ao reimprimir etiqueta {id}: {error}", id, job);
+            return new LabelOutcome(job, index, label, id, LabelStatus.Failed, Array.Empty<PrintRecord>(), error);
+        }
+
+        _history.ConsumeReprintPermit(id);
+        _history.RecordAuthorizedReprint(id, permit.GrantedBy, job);
+        _history.Log(EventType.ReprintAuthorized, $"Etiqueta {id} reimpressa (liberada antes por {permit.GrantedBy})", id, job);
+        return new LabelOutcome(job, index, label, id, LabelStatus.Printed, Array.Empty<PrintRecord>());
+    }
+
     private LabelOutcome Duplicate(string job, int index, Label label, string id)
     {
         var previous = _history.GetPrints(id);
@@ -157,8 +165,6 @@ public sealed class PrintGuard
         var error = await TrySendAsync(label.RawData, sender, cancellationToken);
         if (error is null)
         {
-            if (id is not null)
-                SaveImage(id, job, label);
             _history.Log(EventType.Printed, $"{Name(id, index)} impressa", id, job);
             return new LabelOutcome(job, index, label, id, LabelStatus.Printed, Array.Empty<PrintRecord>());
         }
@@ -167,19 +173,6 @@ public sealed class PrintGuard
             _history.ReleasePrint(id);
         _history.Log(EventType.Error, $"Falha ao enviar {Name(id, index)}: {error}", id, job);
         return new LabelOutcome(job, index, label, id, LabelStatus.Failed, Array.Empty<PrintRecord>(), error);
-    }
-
-    // A etiqueta já saiu: um problema ao guardar a cópia não pode parar o resto do trabalho.
-    private void SaveImage(string id, string job, Label label)
-    {
-        try
-        {
-            _history.SaveLabelImage(id, job, label.RawData);
-        }
-        catch (Exception ex)
-        {
-            _history.Log(EventType.Error, $"Etiqueta {id} impressa, mas não foi guardada para reimpressão: {ex.Message}", id, job);
-        }
     }
 
     /// <summary>Retorna null se enviou, ou a mensagem de erro.</summary>

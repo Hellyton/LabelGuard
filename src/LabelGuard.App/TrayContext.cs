@@ -21,7 +21,6 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly AlertForm _alert;
     private readonly System.Windows.Forms.Timer _queueCheck = new() { Interval = 30_000 };
-    private readonly System.Windows.Forms.Timer _cleanup = new() { Interval = 6 * 60 * 60 * 1000 };
     private EventsForm? _events;
     private int _printed;
     private int _blocked;
@@ -41,7 +40,7 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add(new ToolStripMenuItem($"Protegendo: fila → '{config.OutputPrinter}'") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Etiquetas bloqueadas...", null, (_, _) => _alert.ShowAlert());
-        menu.Items.Add("Reimprimir pallet...", null, async (_, _) => await ReprintAsync());
+        menu.Items.Add("Liberar pallet para reimpressão...", null, (_, _) => GrantReprint());
         menu.Items.Add("Eventos...", null, (_, _) => ShowEvents());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Alterar senha do supervisor...", null, (_, _) => ChangePassword());
@@ -64,7 +63,6 @@ internal sealed class TrayContext : ApplicationContext
         };
 
         _queueCheck.Tick += (_, _) => CheckInputQueue();
-        _cleanup.Tick += (_, _) => CleanupStoredLabels();
     }
 
     public void ShowStarted()
@@ -72,8 +70,6 @@ internal sealed class TrayContext : ApplicationContext
         ShowBalloon($"Protegendo as etiquetas. Liberadas vão para '{_config.OutputPrinter}'.", ToolTipIcon.Info);
         CheckInputQueue();
         _queueCheck.Start();
-        CleanupStoredLabels();
-        _cleanup.Start();
     }
 
     /// <summary>
@@ -149,27 +145,29 @@ internal sealed class TrayContext : ApplicationContext
         }
     }
 
-    /// <summary>Reimprime pelo número do pallet a etiqueta guardada, sem passar pelo Papersystem.</summary>
-    private async Task ReprintAsync()
+    /// <summary>
+    /// Liberação prévia: o supervisor libera um pallet e a próxima impressão dele pelo Papersystem passa uma vez.
+    /// Serve para a etiqueta perdida no fim da bobina (com SET REPRINT OFF a impressora não repete).
+    /// </summary>
+    private void GrantReprint()
     {
-        var id = PasswordPrompt.AskText(null, "Reimprimir pallet", "Número do pallet:");
+        var id = PasswordPrompt.AskText(null, "Liberar pallet para reimpressão", "Número do pallet:");
         if (id is null)
             return;
 
         var prints = _history.GetPrints(id);
-        if (_history.GetLabelImage(id) is null)
+        if (prints.Count == 0)
         {
-            Dialogs.Error(prints.Count == 0
-                ? $"O pallet {id} ainda não foi impresso pelo LabelGuard."
-                : $"A etiqueta do pallet {id} não está mais guardada (ficam {_config.KeepLabelImagesDays} dias).\n\nReimprima pelo Papersystem: ela será barrada e o supervisor libera no alerta.");
+            Dialogs.Info($"O pallet {id} ainda não foi impresso pelo LabelGuard. Pode imprimir normalmente.");
             return;
         }
 
-        var first = prints.Count > 0 ? OutcomeText.FormatTime(prints[0].PrintedAt) : "?";
+        var minutes = Math.Max(1, _config.ReprintPermitMinutes);
         var password = PasswordPrompt.Ask(
             null,
-            "Reimprimir pallet",
-            $"Pallet {id}\nPrimeira impressão: {first}\nVezes impresso: {prints.Count}\n\nSenha do supervisor:");
+            "Liberar pallet para reimpressão",
+            $"Pallet {id}\nPrimeira impressão: {OutcomeText.FormatTime(prints[0].PrintedAt)}\nVezes impresso: {prints.Count}\n\n" +
+            $"A próxima impressão dele vai passar uma vez, nos próximos {minutes} minutos.\n\nSenha do supervisor:");
         if (password is null)
             return;
         if (!CheckPassword(password))
@@ -178,27 +176,9 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
-        var result = await _host.ReprintAsync(id, Supervisor);
+        var permit = _host.GrantReprint(id, Supervisor, TimeSpan.FromMinutes(minutes));
         _events?.Reload();
-        if (result.Status == ReprintStatus.Printed)
-            ShowBalloon($"Pallet {id} reimpresso.", ToolTipIcon.Info);
-        else
-            Dialogs.Error($"Não foi possível reimprimir o pallet {id}: {result.Error ?? "etiqueta não encontrada"}");
-    }
-
-    private void CleanupStoredLabels()
-    {
-        var days = Math.Max(1, _config.KeepLabelImagesDays);
-        try
-        {
-            var deleted = _history.DeleteLabelImagesOlderThan(TimeSpan.FromDays(days));
-            if (deleted > 0)
-                AppLog.Write($"{deleted} etiqueta(s) guardada(s) há mais de {days} dias apagada(s)");
-        }
-        catch (Exception ex)
-        {
-            AppLog.Write($"Falha ao apagar etiquetas guardadas antigas: {ex.Message}");
-        }
+        Dialogs.Info($"Pallet {id} liberado até {permit.ExpiresAt.ToLocalTime():HH:mm}.\n\nReimprima a etiqueta pelo Papersystem. Vale para uma impressão.");
     }
 
     private bool CheckPassword(string password) => SupervisorPassword.Verify(password, _config.SupervisorPasswordHash);
@@ -272,7 +252,6 @@ internal sealed class TrayContext : ApplicationContext
         if (disposing)
         {
             _queueCheck.Dispose();
-            _cleanup.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
             _alert.Dispose();

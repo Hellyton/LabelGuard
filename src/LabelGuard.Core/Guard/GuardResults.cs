@@ -45,21 +45,6 @@ public sealed record LabelOutcome(
     public bool IsBlocked => Status is LabelStatus.Duplicate or LabelStatus.MultipleCopies or LabelStatus.NoId;
 }
 
-public enum ReprintStatus
-{
-    /// <summary>Etiqueta guardada enviada de novo.</summary>
-    Printed,
-
-    /// <summary>Nenhuma etiqueta guardada para esse ID (nunca impressa ou apagada pela retenção).</summary>
-    NotFound,
-
-    /// <summary>O envio para a impressora falhou; nada foi registrado.</summary>
-    Failed,
-}
-
-/// <summary>Resultado de <see cref="PrintGuard.ReprintAsync"/>.</summary>
-public sealed record ReprintResult(ReprintStatus Status, StoredLabel? Label, string? Error);
-
 public sealed record JobResult(string Job, IReadOnlyList<LabelOutcome> Labels)
 {
     public IEnumerable<LabelOutcome> Blocked => Labels.Where(l => l.IsBlocked);

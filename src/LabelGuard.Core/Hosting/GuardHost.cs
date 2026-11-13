@@ -1,5 +1,6 @@
 using System.Net;
 using LabelGuard.Core.Guard;
+using LabelGuard.Core.History;
 using LabelGuard.Core.Receiving;
 
 namespace LabelGuard.Core.Hosting;
@@ -47,9 +48,9 @@ public sealed class GuardHost : IAsyncDisposable
     public Task<LabelOutcome> AuthorizeAsync(LabelOutcome blocked, string supervisor, CancellationToken cancellationToken = default) =>
         _guard.AuthorizeAsync(blocked, supervisor, _sender, cancellationToken);
 
-    /// <summary>Reimprime pelo número a etiqueta guardada, com autorização do supervisor.</summary>
-    public Task<ReprintResult> ReprintAsync(string labelId, string supervisor, CancellationToken cancellationToken = default) =>
-        _guard.ReprintAsync(labelId, supervisor, _sender, cancellationToken);
+    /// <summary>Libera a próxima impressão do ID (uma vez, por <paramref name="validFor"/>).</summary>
+    public ReprintPermit GrantReprint(string labelId, string supervisor, TimeSpan validFor) =>
+        _guard.GrantReprint(labelId, supervisor, validFor);
 
     public async Task StopAsync()
     {

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO.Compression;
 using Microsoft.Data.Sqlite;
 
 namespace LabelGuard.Core.History;
@@ -11,8 +10,8 @@ namespace LabelGuard.Core.History;
 /// </summary>
 public sealed class LabelHistory : IDisposable
 {
-    // 1: prints e events. 2: label_images (etiquetas guardadas para reimpressão).
-    private const int SchemaVersion = 2;
+    // 1: prints e events. 2: label_images (descartada). 3: reprint_permits, sem label_images.
+    private const int SchemaVersion = 3;
 
     private readonly SqliteConnection _connection;
     private readonly TimeProvider _clock;
@@ -39,15 +38,16 @@ public sealed class LabelHistory : IDisposable
 
         if (version < 1)
             CreateSchemaV1();
-        if (version < 2)
+        if (version < 3)
+            // A versão 2 guardava as etiquetas (label_images); essa ideia foi trocada pela liberação prévia.
             Execute("""
-                CREATE TABLE IF NOT EXISTS label_images (
-                    label_id TEXT PRIMARY KEY,
-                    saved_at TEXT NOT NULL,
-                    job      TEXT NULL,
-                    data     BLOB NOT NULL
+                DROP TABLE IF EXISTS label_images;
+                CREATE TABLE IF NOT EXISTS reprint_permits (
+                    label_id   TEXT PRIMARY KEY,
+                    granted_at TEXT NOT NULL,
+                    granted_by TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS ix_label_images_saved ON label_images(saved_at);
                 """);
         Execute($"PRAGMA user_version = {SchemaVersion};");
     }
@@ -176,73 +176,61 @@ public sealed class LabelHistory : IDisposable
     }
 
     /// <summary>
-    /// Guarda os bytes da etiqueta enviada (comprimidos), para reimprimir sem o Papersystem.
-    /// Fica só a última versão de cada ID.
+    /// Libera uma reimpressão do ID até <paramref name="expiresAt"/>: a próxima impressão dele passa uma vez.
+    /// Uma liberação nova substitui a anterior do mesmo ID.
     /// </summary>
-    public void SaveLabelImage(string labelId, string? job, ReadOnlySpan<byte> data)
+    public ReprintPermit GrantReprint(string labelId, string supervisor, TimeSpan validFor)
     {
-        var compressed = Compress(data);
+        ArgumentException.ThrowIfNullOrWhiteSpace(supervisor);
+        var now = _clock.GetUtcNow();
+        var permit = new ReprintPermit(labelId, now, supervisor, now + validFor);
         lock (_lock)
         {
             using var command = Command(
                 """
-                INSERT INTO label_images (label_id, saved_at, job, data) VALUES ($id, $at, $job, $data)
-                ON CONFLICT(label_id) DO UPDATE SET saved_at = excluded.saved_at, job = excluded.job, data = excluded.data
+                INSERT INTO reprint_permits (label_id, granted_at, granted_by, expires_at) VALUES ($id, $at, $by, $until)
+                ON CONFLICT(label_id) DO UPDATE SET
+                    granted_at = excluded.granted_at, granted_by = excluded.granted_by, expires_at = excluded.expires_at
                 """,
-                ("$id", labelId), ("$at", Now()), ("$job", job), ("$data", compressed));
+                ("$id", labelId), ("$at", Format(permit.GrantedAt)), ("$by", supervisor), ("$until", Format(permit.ExpiresAt)));
             command.ExecuteNonQuery();
         }
+        return permit;
     }
 
-    /// <summary>A etiqueta guardada do ID, ou null se não houver (nunca impressa ou já apagada pela retenção).</summary>
-    public StoredLabel? GetLabelImage(string labelId)
+    /// <summary>A liberação ainda válida do ID, ou null.</summary>
+    public ReprintPermit? GetReprintPermit(string labelId)
     {
         lock (_lock)
         {
             using var command = Command(
-                "SELECT label_id, saved_at, job, data FROM label_images WHERE label_id = $id", ("$id", labelId));
+                "SELECT label_id, granted_at, granted_by, expires_at FROM reprint_permits WHERE label_id = $id AND expires_at > $now",
+                ("$id", labelId), ("$now", Now()));
             using var reader = command.ExecuteReader();
             if (!reader.Read())
                 return null;
-            return new StoredLabel(
-                reader.GetString(0),
-                ParseTime(reader.GetString(1)),
-                NullableString(reader, 2),
-                Decompress(reader.GetFieldValue<byte[]>(3)));
+            return new ReprintPermit(
+                reader.GetString(0), ParseTime(reader.GetString(1)), reader.GetString(2), ParseTime(reader.GetString(3)));
         }
     }
 
-    /// <summary>Apaga etiquetas guardadas há mais tempo que <paramref name="age"/>. O histórico de impressões não muda.</summary>
-    public int DeleteLabelImagesOlderThan(TimeSpan age)
+    /// <summary>Usa (apaga) a liberação do ID depois que a reimpressão saiu. Também limpa as vencidas.</summary>
+    public void ConsumeReprintPermit(string labelId)
     {
-        var cutoff = (_clock.GetUtcNow() - age).ToString("O", CultureInfo.InvariantCulture);
         lock (_lock)
         {
-            using var command = Command("DELETE FROM label_images WHERE saved_at < $cutoff", ("$cutoff", cutoff));
-            return command.ExecuteNonQuery();
+            using var command = Command(
+                "DELETE FROM reprint_permits WHERE label_id = $id OR expires_at <= $now", ("$id", labelId), ("$now", Now()));
+            command.ExecuteNonQuery();
         }
     }
 
     public void Dispose() => _connection.Dispose();
 
-    // A imagem é quase toda branca: comprime para poucos KB.
-    private static byte[] Compress(ReadOnlySpan<byte> data)
-    {
-        using var output = new MemoryStream();
-        using (var zlib = new ZLibStream(output, CompressionLevel.Optimal))
-            zlib.Write(data);
-        return output.ToArray();
-    }
+    private string Now() => Format(_clock.GetUtcNow());
 
-    private static byte[] Decompress(byte[] data)
-    {
-        using var input = new ZLibStream(new MemoryStream(data), CompressionMode.Decompress);
-        using var output = new MemoryStream();
-        input.CopyTo(output);
-        return output.ToArray();
-    }
-
-    private string Now() => _clock.GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
+    // UTC com o mesmo formato sempre: a comparação de texto no SQL vale como comparação de data.
+    private static string Format(DateTimeOffset time) => time.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
     private static DateTimeOffset ParseTime(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);

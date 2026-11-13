@@ -170,18 +170,20 @@ terminal: com `dotnet run`, fechar o terminal fecha o LabelGuard junto e a fila 
   | `allowMultipleCopies`  | `false`                   | aceitar etiquetas com mais de 1 cópia            |
   | `printerReprintOff`    | `true`                    | enviar `SET REPRINT OFF` antes de cada etiqueta  |
   | `databasePath`         | `historico.db` na pasta   | histórico                                        |
-  | `keepLabelImagesDays`  | `30`                      | dias que cada etiqueta impressa fica guardada    |
+  | `reprintPermitMinutes` | `60`                      | validade de "Liberar pallet para reimpressão"    |
   | `saveJobsTo`           | vazio                     | pasta para gravar os trabalhos recebidos         |
   | `supervisorPasswordHash` | definido no 1º uso      | hash PBKDF2 da senha única do supervisor         |
 
 - No primeiro uso pede a senha do supervisor (guardada só como hash).
-- Ícone perto do relógio, com menu: etiquetas bloqueadas, reimprimir pallet, eventos, alterar senha, sair.
+- Ícone perto do relógio, com menu: etiquetas bloqueadas, liberar pallet para reimpressão,
+  eventos, alterar senha, sair.
 - Quando bloqueia, abre a janela de alerta (som + lista). O supervisor marca as etiquetas e
   libera com a senha; a reimpressão fica registrada no histórico.
-- **Reimprimir pallet...**: o supervisor digita o número e a senha, e a etiqueta sai de novo
-  sem passar pelo Papersystem. Serve para a etiqueta perdida quando a bobina acaba no meio dela
-  (com `SET REPRINT OFF` a impressora não repete). Cada etiqueta impressa fica guardada
-  comprimida (cerca de 17 KB) por `keepLabelImagesDays` dias, na tabela `label_images`.
+- **Liberar pallet para reimpressão...**: o supervisor digita o número e a senha; a próxima
+  impressão desse pallet pelo Papersystem passa uma vez, dentro de `reprintPermitMinutes`
+  minutos. Serve para a etiqueta perdida quando a bobina acaba no meio dela (com
+  `SET REPRINT OFF` a impressora não repete). O LabelGuard não guarda as etiquetas: só a
+  liberação pendente (tabela `reprint_permits`).
 - Falha ao enviar para a impressora abre um erro por cima de todas as janelas, dizendo quantas
   etiquetas não saíram e a partir de qual; basta mandar o lote de novo.
 - Fechar o LabelGuard pede a senha: com ele fechado, a fila `LABEL` para de imprimir.

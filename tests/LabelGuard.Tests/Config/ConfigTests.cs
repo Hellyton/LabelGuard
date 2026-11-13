@@ -25,7 +25,7 @@ public class ConfigTests : IDisposable
         Assert.Null(config.IdPattern);
         Assert.Equal(IdExtractor.DefaultPattern, config.EffectiveIdPattern);
         Assert.True(config.PrinterReprintOff);
-        Assert.Equal(30, config.KeepLabelImagesDays);
+        Assert.Equal(60, config.ReprintPermitMinutes);
         Assert.Null(config.SupervisorPasswordHash);
     }
 
