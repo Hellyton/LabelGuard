@@ -1,0 +1,34 @@
+﻿LabelGuard - controle de etiquetas duplicadas
+=============================================
+
+Pré-requisito: a impressora de etiquetas já instalada e imprimindo pelo Papersystem
+(fila "LABEL"). Não precisa instalar .NET.
+
+INSTALAR
+1. Copie esta pasta para a máquina (ex.: C:\LabelGuard-instalacao).
+2. Abra o PowerShell como administrador nesta pasta.
+3. (Opcional) Veja o que será feito, sem alterar nada:
+     powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular
+4. Instale:
+     powershell -ExecutionPolicy Bypass -File instalar.ps1
+   Se a fila do Papersystem tiver outro nome:  -Fila "NOME DA FILA"
+5. O LabelGuard abre (ícone de escudo perto do relógio) e pede para criar a senha
+   do supervisor. Depois imprima uma etiqueta de teste pelo Papersystem.
+
+USO
+- O Papersystem continua imprimindo na fila "LABEL", como sempre.
+- NUNCA imprima direto na fila "LabelGuard - NAO USAR".
+- Etiqueta repetida: abre um alerta vermelho e nada sai. Para reimprimir, o supervisor
+  marca a etiqueta no alerta e libera com a senha.
+- O LabelGuard abre sozinho com o Windows. Fechar pede a senha do supervisor: com ele
+  fechado, as etiquetas ficam paradas na fila.
+
+DESINSTALAR (volta tudo como era antes)
+     powershell -ExecutionPolicy Bypass -File desinstalar.ps1
+   O histórico fica em C:\ProgramData\LabelGuard (use -RemoverDados para apagar).
+
+PROBLEMAS
+- Nada imprime: confira se o escudo está perto do relógio. Se estiver, abra a fila
+  "LABEL" (Configurações > Impressoras > LABEL > Abrir fila) e, no menu Impressora,
+  desmarque "Usar Impressora Offline".
+- Detalhes do que aconteceu: C:\ProgramData\LabelGuard\labelguard.log

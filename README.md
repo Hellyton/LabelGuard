@@ -70,7 +70,7 @@ powershell -ExecutionPolicy Bypass -File tools\desligar-reimpressao.ps1 -Impress
 - [x] **4. Motor de decisão** – imprimir / bloquear / reimpressão autorizada
 - [x] **5. Receptor e envio** – servidor TCP local (porta 9100) e envio RAW para a impressora USB pelo spooler
 - [x] **6. Aplicativo Windows** – ícone na bandeja, janela de alerta, senha de supervisor, arquivo de configuração
-- [ ] **7. Instalação** – script PowerShell que cria a impressora protegida, guia de configuração
+- [x] **7. Instalação** – pacote autocontido, scripts de instalar/desinstalar, início com o Windows
 
 ## Estrutura
 
@@ -115,6 +115,38 @@ O ID é reservado no histórico antes do envio e liberado se o envio falhar: uma
 etiqueta que não saiu não fica marcada como impressa. Etiquetas bloqueadas podem
 ser liberadas com `AuthorizeAsync`, que registra o supervisor.
 
+## Instalação na produção
+
+1. Gerar o pacote (na máquina de desenvolvimento):
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\publicar.ps1
+   ```
+
+   Cria `dist\LabelGuard` e `dist\LabelGuard.zip`: `LabelGuard.App.exe` autocontido (não precisa
+   de .NET na máquina), `instalar.ps1`, `desinstalar.ps1`, `desligar-reimpressao.ps1` e `LEIA-ME.txt`.
+
+2. Na máquina da produção, com a impressora já imprimindo pelo Papersystem na fila `LABEL`,
+   abrir o PowerShell como administrador na pasta do pacote:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File instalar.ps1 -Simular   # mostra o que faria
+   powershell -ExecutionPolicy Bypass -File instalar.ps1            # instala
+   ```
+
+   O instalador descobre a porta USB da fila, cria a porta `LabelGuard_9100` e a fila
+   `LabelGuard - NAO USAR`, copia o programa para `C:\Program Files\LabelGuard`, prepara
+   `C:\ProgramData\LabelGuard` (gravável pelos usuários), cria o atalho em Inicializar (todos os
+   usuários), envia `SET REPRINT OFF`, abre o LabelGuard e só então liga a fila `LABEL` a ele.
+   Rodar de novo atualiza o programa sem perder senha nem histórico.
+
+3. `desinstalar.ps1` devolve a fila para a porta USB e remove o resto (o histórico fica, a não
+   ser com `-RemoverDados`).
+
+O aplicativo confere a cada 30 s se a fila `LABEL` ficou como "Usar impressora offline" (o
+Windows faz isso quando não consegue entregar um trabalho). Tenta reativar; sem permissão de
+administrador, avisa na bandeja como desmarcar.
+
 ## Aplicativo (bandeja)
 
 ```bash
@@ -130,6 +162,7 @@ terminal: com `dotnet run`, fechar o terminal fecha o LabelGuard junto e a fila 
 
   | Chave                  | Padrão                    | O que é                                          |
   |------------------------|---------------------------|--------------------------------------------------|
+  | `inputPrinter`         | `LABEL`                   | fila do Papersystem (vigiada contra "offline")   |
   | `outputPrinter`        | `LabelGuard - NAO USAR`   | fila ligada à impressora (recebe as liberadas)   |
   | `port`                 | `9100`                    | porta local da fila protegida                    |
   | `idPattern`            | vazio (padrão do ID)      | expressão regular do ID                          |

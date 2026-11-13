@@ -25,6 +25,9 @@ public sealed class LabelGuardConfig
 
     public static string DefaultPath { get; } = Path.Combine(DefaultDirectory, FileName);
 
+    /// <summary>Fila em que o Papersystem imprime (porta do LabelGuard); vigiada para não ficar "offline".</summary>
+    public string InputPrinter { get; set; } = "LABEL";
+
     /// <summary>Fila do Windows ligada à impressora de verdade, que recebe as etiquetas liberadas em RAW.</summary>
     public string OutputPrinter { get; set; } = "LabelGuard - NAO USAR";
 
