@@ -51,7 +51,11 @@ internal sealed class TrayContext : ApplicationContext
         UpdateTooltip();
 
         _host.JobProcessed += result => _ui.Post(_ => OnJob(result), null);
-        _host.Message += message => _ui.Post(_ => ShowBalloon(message, ToolTipIcon.Warning), null);
+        _host.Message += message =>
+        {
+            AppLog.Write(message);
+            _ui.Post(_ => ShowBalloon(message, ToolTipIcon.Warning), null);
+        };
     }
 
     public void ShowStarted() =>
@@ -74,9 +78,12 @@ internal sealed class TrayContext : ApplicationContext
 
         var failed = result.Labels.FirstOrDefault(l => l.Status == LabelStatus.Failed);
         if (failed is not null)
+        {
+            AppLog.Write($"Falha ao enviar ({result.Job}): {failed.Error}");
             ShowBalloon(
                 $"Falha ao enviar para a impressora: {failed.Error}\nAs etiquetas que não saíram não foram registradas; imprima de novo.",
                 ToolTipIcon.Error);
+        }
     }
 
     private bool CheckPassword(string password) => SupervisorPassword.Verify(password, _config.SupervisorPasswordHash);
@@ -132,6 +139,7 @@ internal sealed class TrayContext : ApplicationContext
             return;
         }
 
+        AppLog.Write("Fechado pelo menu Sair (senha do supervisor)");
         await _host.StopAsync();
         _tray.Visible = false;
         ExitThread();

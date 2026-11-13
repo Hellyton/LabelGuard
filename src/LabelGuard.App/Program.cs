@@ -25,6 +25,19 @@ internal static class Program
         }
 
         var configPath = args.Length == 2 && args[0] == "--config" ? args[1] : LabelGuardConfig.DefaultPath;
+        var configDirectory = Path.GetDirectoryName(Path.GetFullPath(configPath))!;
+        Directory.CreateDirectory(configDirectory);
+        AppLog.Configure(configDirectory);
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) =>
+        {
+            AppLog.Write($"Erro inesperado na tela: {e.Exception}");
+            Dialogs.Error($"Erro inesperado: {e.Exception.Message}\n\nO LabelGuard continua rodando. Detalhes em labelguard.log.");
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => AppLog.Write($"Erro fatal: {e.ExceptionObject}");
+        Microsoft.Win32.SystemEvents.SessionEnding += (_, e) => AppLog.Write($"Windows encerrando a sessão ({e.Reason})");
+        AppLog.Write($"Iniciando (pid {Environment.ProcessId})");
+
         LabelGuardConfig config;
         try
         {
@@ -32,6 +45,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            AppLog.Write($"Configuração inválida: {ex.Message}");
             Dialogs.Error(ex.Message);
             return 1;
         }
@@ -61,6 +75,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            AppLog.Write($"Não iniciou: {ex.Message}");
             Dialogs.Error($"{ex.Message}\n\nConfira a configuração em {configPath}.");
             return 1;
         }
@@ -84,12 +99,15 @@ internal static class Program
         }
         catch (SocketException ex)
         {
+            AppLog.Write($"Não iniciou: porta {config.Port}: {ex.Message}");
             Dialogs.Error($"Não foi possível abrir a porta {config.Port}: {ex.Message}\n\nVerifique se o LabelGuard já está rodando em outra janela (console).");
             return 1;
         }
 
+        AppLog.Write($"Protegendo: porta {config.Port} -> '{config.OutputPrinter}'");
         tray.ShowStarted();
         Application.Run(tray);
+        AppLog.Write("Encerrado");
 
         // Fora da thread da tela, para não travar esperando por ela.
         Task.Run(host.StopAsync).GetAwaiter().GetResult();

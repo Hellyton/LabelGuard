@@ -118,8 +118,13 @@ ser liberadas com `AuthorizeAsync`, que registra o supervisor.
 ## Aplicativo (bandeja)
 
 ```bash
-dotnet run --project src/LabelGuard.App [-- --config <arquivo>]
+dotnet build src/LabelGuard.App
 ```
+
+Abrir `src\LabelGuard.App\bin\Debug\net8.0-windows\LabelGuard.App.exe` com duplo clique (não pelo
+terminal: com `dotnet run`, fechar o terminal fecha o LabelGuard junto e a fila `LABEL` para).
+`--config <arquivo>` usa outra configuração. Início, encerramento e erros ficam em
+`C:\ProgramData\LabelGuard\labelguard.log`.
 
 - Configuração em `C:\ProgramData\LabelGuard\config.json` (criada no primeiro uso):
 
