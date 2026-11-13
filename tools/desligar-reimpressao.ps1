@@ -1,12 +1,15 @@
-# Desliga a reimpressão automática da impressora de etiquetas (TSPL), que repete sozinha
+﻿# Desliga a reimpressão automática da impressora de etiquetas (TSPL), que repete sozinha
 # a etiqueta em andamento depois de um erro (fim de bobina, tampa aberta).
 # Não precisa do LabelGuard: envia só o comando, direto para a fila da impressora.
 #
-# Uso:  powershell -ExecutionPolicy Bypass -File desligar-reimpressao.ps1 -Impressora "LABEL"
+# Uso:  clique com o botão direito > "Executar com o PowerShell" (usa a fila "LABEL"), ou
+#       powershell -ExecutionPolicy Bypass -File desligar-reimpressao.ps1 -Impressora "LABEL"
 #       powershell -ExecutionPolicy Bypass -File desligar-reimpressao.ps1 -Impressora "LABEL" -Ligar   (desfaz)
+# -SemPausa fecha sem esperar Enter (para rodar automaticamente).
 param(
-    [Parameter(Mandatory = $true)][string]$Impressora,
-    [switch]$Ligar
+    [string]$Impressora = "LABEL",
+    [switch]$Ligar,
+    [switch]$SemPausa
 )
 
 Add-Type -TypeDefinition @"
@@ -66,6 +69,23 @@ public static class LabelGuardRawPrint
 "@
 
 $valor = if ($Ligar) { 'ON' } else { 'OFF' }
-$comando = "SET REPRINT $valor`r`n"
-[LabelGuardRawPrint]::Send($Impressora, [Text.Encoding]::ASCII.GetBytes($comando))
-"Enviado para '$Impressora': SET REPRINT $valor"
+$codigo = 0
+try {
+    [LabelGuardRawPrint]::Send($Impressora, [Text.Encoding]::ASCII.GetBytes("SET REPRINT $valor`r`n"))
+    Write-Host "OK: enviado para '$Impressora': SET REPRINT $valor" -ForegroundColor Green
+    if (-not $Ligar) {
+        Write-Host "A impressora não vai mais repetir sozinha a etiqueta depois de fim de bobina ou tampa aberta."
+    }
+}
+catch {
+    $codigo = 1
+    Write-Host "ERRO: $($_.Exception.InnerException.Message)" -ForegroundColor Red
+    Write-Host "Impressoras instaladas:"
+    Get-Printer | ForEach-Object { Write-Host "  $($_.Name)" }
+    Write-Host 'Rode de novo com -Impressora "<nome da fila>".'
+}
+
+if (-not $SemPausa) {
+    Read-Host "Pressione Enter para fechar" | Out-Null
+}
+exit $codigo
